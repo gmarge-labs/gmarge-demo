@@ -82,13 +82,20 @@ REVENUE_PER_SESSION = 2.10
 # ``true_iroas``   -- the real incremental revenue per $1 of spend.
 # ``reported_roas``-- what the ad platform claims, via its own attribution.
 # The gap between them is the whole point of the dataset.
+#
+# The levels are set so that pausing any one channel moves its test regions'
+# revenue by a believable 3-20% -- a holdout that swings revenue by 40% is not
+# a test anyone would run twice. Note that a holdout's effect size depends only
+# on the channel *mix* and the ROAS levels, not on the overall spend scale:
+# revenue is pinned to total attributed revenue by ATTRIBUTION_RATIO, so
+# scaling every budget up scales revenue with it.
 # --------------------------------------------------------------------------
 
 CHANNELS: dict[str, dict] = {
     "Meta prospecting": {
-        "daily_spend": 9000.0,
-        "true_iroas": 1.80,
-        "reported_roas": 2.42,
+        "daily_spend": 5000.0,
+        "true_iroas": 2.30,
+        "reported_roas": 3.50,
         "cpm": 11.5,
         "cpc": 1.30,
         "base_frequency": 1.9,
@@ -98,9 +105,9 @@ CHANNELS: dict[str, dict] = {
         },
     },
     "Meta retargeting": {
-        "daily_spend": 2500.0,
-        "true_iroas": 0.60,
-        "reported_roas": 3.60,
+        "daily_spend": 2400.0,
+        "true_iroas": 1.10,
+        "reported_roas": 7.00,
         "cpm": 16.0,
         "cpc": 1.05,
         "base_frequency": 3.4,
@@ -109,9 +116,9 @@ CHANNELS: dict[str, dict] = {
         },
     },
     "Google branded search": {
-        "daily_spend": 1800.0,
-        "true_iroas": 0.45,
-        "reported_roas": 4.05,
+        "daily_spend": 3000.0,
+        "true_iroas": 0.80,
+        "reported_roas": 8.00,
         "cpm": 38.0,
         "cpc": 0.95,
         "base_frequency": None,  # search does not report frequency
@@ -120,9 +127,9 @@ CHANNELS: dict[str, dict] = {
         },
     },
     "Google shopping": {
-        "daily_spend": 4200.0,
-        "true_iroas": 1.30,
-        "reported_roas": 2.70,
+        "daily_spend": 4500.0,
+        "true_iroas": 2.05,
+        "reported_roas": 5.00,
         "cpm": 22.0,
         "cpc": 0.72,
         "base_frequency": None,
@@ -131,9 +138,9 @@ CHANNELS: dict[str, dict] = {
         },
     },
     "TikTok": {
-        "daily_spend": 2800.0,
-        "true_iroas": 1.00,
-        "reported_roas": 2.28,
+        "daily_spend": 3000.0,
+        "true_iroas": 1.60,
+        "reported_roas": 4.20,
         "cpm": 7.5,
         "cpc": 1.55,
         "base_frequency": 2.3,

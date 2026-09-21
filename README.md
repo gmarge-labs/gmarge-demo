@@ -155,6 +155,76 @@ The module never calls an AI API, and never reads an answer out of
 regions were paused and when — which is what an analyst would have from the
 media plan. `holdout_plan()` strips the rest, and a test asserts it.
 
+## Data quality
+
+`gmarge/quality.py` looks for the four things that are wrong with these tables.
+Each check returns findings carrying a severity, the dates, the table, a
+plain-English description and the numbers behind it:
+
+```python
+from gmarge.quality import run_checks
+
+for finding in run_checks("data"):
+    print(finding.severity, finding.check, finding.description)
+```
+
+On this dataset it returns four findings and nothing else: the two GA4 days
+missing in week 8, the Meta pixel double count across 2025-03-25 → 03-27, and
+the reporting lag on the last two days of `ad_spend` and of `ga4_sessions`. It
+measures the lag at 82% and 45% of a settled day for `ad_spend`, against the
+planted 82% and 45%.
+
+Two of the checks are mostly about what they *don't* say. The table holds 163
+pairs of orders that are identical line for line by coincidence — same day,
+region, price and basket — so the duplicate check reports a repeated
+`order_id` outright, but reports identical *contents* only on a date where the
+rate of them is far above the table's own background rate, which is what a
+batch loaded twice looks like. And a channel going dark in five regions for a
+geo holdout moves its share of store revenue without anything being wrong, so
+the double-count check measures a platform against what its own spend predicts
+rather than against the store, and only fires when Shopify's revenue and order
+count stood still.
+
+## Anomalies
+
+`gmarge/anomalies.py` scores every paid channel and week against that
+channel's own trailing 8 weeks, using the median and the median absolute
+deviation. Each flag names the campaign and ad set behind most of the move and
+its share of it:
+
+```python
+from gmarge.anomalies import detect_anomalies
+
+for flag in detect_anomalies("data"):
+    print(flag.week, flag.channel, flag.metric, flag.ad_set, flag.share_of_move)
+```
+
+It scores *rates* — reported ROAS, CPC, CPM, CTR, frequency — not spend or
+revenue levels, because levels move for planned reasons: budgets get raised, a
+holdout takes a channel dark in a third of the account, a promo week lifts
+everything. A rate survives all three, and survives the last two days still
+filling in, because a lag scales a rate's numerator and denominator together.
+
+A flag needs both a robust score past 3.5 and a move of at least 10%. Of the
+414 comparisons it makes over 26 weeks, the 399 that hold no planted fault all
+sit within 3.2% of their trailing median while the faults move 19% to 41%, so
+the two conditions have roughly three times the headroom in each direction.
+On this dataset the scan returns four flags and no false alarms:
+
+| week | channel | metric | move | ad set behind it | share |
+|---|---|---|---:|---|---:|
+| 12 | Meta prospecting | reported ROAS | +41.2% | `Core \| Broad 25-44` | 32% |
+| 12 | Meta retargeting | reported ROAS | +41.5% | `RET \| 7d Add-to-Cart` | 61% |
+| 20 | Meta prospecting | frequency | +39.2% | `Core \| Broad 25-44` | 95% |
+| 20 | Meta prospecting | reported ROAS | −18.8% | `Core \| Broad 25-44` | 100% |
+
+Week 12 is the pixel firing twice for the whole platform, so the shares track
+each ad set's size and no single ad set is blamed. Week 20 is one ad set
+burning out, and the attribution says so.
+
+Neither module calls an AI API, and neither reads an answer out of
+`truth.json`.
+
 ## Tests
 
 ```bash
@@ -163,6 +233,11 @@ pytest
 
 `tests/test_planted_truths.py` looks for each planted fact the way an analyst
 would — measuring it from the tables, not reading it back out of the generator.
+`tests/test_quality.py` and `tests/test_anomalies.py` hold the detectors to the
+same standard: every planted defect found, checked against the figures in
+`truth.json`, with a budget of two false alarms across the 26 weeks that
+neither module spends. Both are also run against a second seed, so a threshold
+cannot pass by landing well on one dataset.
 
 ## Ground rules
 

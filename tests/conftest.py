@@ -51,5 +51,17 @@ def dataset(tmp_path_factory) -> Dataset:
 
 
 @pytest.fixture(scope="session")
+def other_dataset(tmp_path_factory) -> Dataset:
+    """A second dataset, from a different seed.
+
+    A detection threshold has to survive a change of seed, not just land on
+    the one dataset it was set against.
+    """
+    out = tmp_path_factory.mktemp("data_alt")
+    gen.generate(out, seed=gen.SEED + 1)
+    return _load(out)
+
+
+@pytest.fixture(scope="session")
 def load():
     return _load

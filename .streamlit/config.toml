@@ -1,0 +1,41 @@
+# Theme for the G-marge demo app. Matches gmarge.com: dark navy, Inter, light
+# blue for incremental/true figures and grey for platform-reported ones.
+#
+# The two figure colours are also fixed in app.py (INCREMENTAL / REPORTED) so
+# that a chart cannot drift from the legend. Keep them in step.
+
+[theme]
+base = "dark"
+
+# Dark navy page, brand navy for cards, sidebar and widget surfaces.
+backgroundColor = "#001433"
+secondaryBackgroundColor = "#002B6B"
+borderColor = "#123B78"
+
+# Light blue: incremental / measured / true. It is the accent as well, so a
+# selected control reads as "this is the measured view".
+primaryColor = "#8FC0FF"
+textColor = "#E7EEFA"
+linkColor = "#8FC0FF"
+
+font = "Inter, sans-serif"
+headingFont = "Inter, sans-serif"
+baseFontSize = 15
+
+# Light blue first, grey second: incremental before platform-reported, in any
+# chart that falls back to the categorical scale.
+chartCategoricalColors = ["#8FC0FF", "#66728C", "#4F8FE0", "#8E99B3", "#2F6BC0"]
+
+showSidebarBorder = true
+
+[theme.sidebar]
+backgroundColor = "#002145"
+borderColor = "#123B78"
+
+[server]
+# The app reads data/ and readouts/ from disk and calls nothing. Nothing here
+# needs to phone home.
+headless = true
+
+[browser]
+gatherUsageStats = false

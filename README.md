@@ -22,6 +22,8 @@ pip install -r requirements.txt
 
 python -m gmarge.generate --out data   # regenerate the sample data
 pytest                                 # verify every planted truth is present
+
+streamlit run app.py                   # open the demo app
 ```
 
 Python 3.11+.
@@ -321,6 +323,52 @@ and `model: null`. The tests use only that path: no key, no network, no model.
 It doubles as a check on the facts — if the template cannot be written from the
 facts alone, in the order asked for, neither can the model.
 
+## The app
+
+`app.py` is a Streamlit app over the same three modules. It reads `data/` and
+`readouts/` off disk and nothing else — no key, no network, no `anthropic`
+anywhere in its import graph, which `tests/test_app.py` asserts by parsing the
+source rather than by trusting the process.
+
+```bash
+streamlit run app.py
+```
+
+Five pages: **Overview** (store revenue, reported against incremental ROAS, the
+over-claim ratio over time, and the latest read-out), **Channels** (reported
+against incremental per channel, with the gap labelled), **Holdout tests**
+(test against control regions over time, with each result and its 90% interval
+in plain words), **Agent read-outs** (every committed read-out, newest first,
+with the facts it was written from underneath) and **Data health** (the quality
+findings and anomaly flags, with severity and dates).
+
+Every number it shows comes from `gmarge/metrics.py`, `gmarge/quality.py` or
+`gmarge/anomalies.py`, formatted with the display helpers in
+`gmarge/analyst.py`. One formatter, so a figure on a page and the same figure
+in a read-out cannot disagree — `$14.9k`, `1.47x`, `39.2%`, and frequency as a
+plain `2.88`, since impressions per person is a count per head and not a
+multiple of anything.
+
+Three honesty rules are built into it rather than left to whoever writes the
+copy:
+
+* **The lagging days are shaded.** `gmarge/quality.py` finds the days still
+  filling in; every time-series chart shades exactly those days and labels them
+  `provisional`. The shading is read from the findings, so it moves if the data
+  does.
+* **A lagging ratio is never drawn as a change.** A ratio spanning those days
+  moves because the days are short, not because anything happened. The app
+  withholds the same figures a read-out withholds, by the same rule
+  (`analyst.TOTAL_SOURCES`), and says on the page what it held back and why.
+  The last week is absent from the over-claim ratio chart for exactly this
+  reason.
+* **Reported is not incremental.** Platform-reported figures are grey
+  (`#66728C`), measured incremental figures light blue (`#8FC0FF`), on every
+  chart, with no exception. Every chart is marked illustrative, and the sample-
+  data banner is on every page.
+
+Theme in `.streamlit/config.toml`: dark navy, brand navy `#002B6B`, Inter.
+
 ## Tests
 
 ```bash
@@ -334,6 +382,13 @@ same standard: every planted defect found, checked against the figures in
 `truth.json`, with a budget of two false alarms across the 26 weeks that
 neither module spends. Both are also run against a second seed, so a threshold
 cannot pass by landing well on one dataset.
+
+`tests/test_app.py` drives the app with Streamlit's `AppTest`, in-process — no
+server, no browser. It asserts that every page renders without an exception,
+that no page pulls in the SDK, and that the honesty rules above actually hold
+in the rendered output: the provisional band is decoded from the chart
+Streamlit sent and checked to cover exactly the lagging days, and the lagging
+week is checked to be absent from the ratio chart's own data.
 
 ## Ground rules
 

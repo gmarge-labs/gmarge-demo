@@ -234,8 +234,13 @@ through `gmarge/llm.py`, the only module that imports `anthropic`:
 ```bash
 cp .env.example .env          # add ANTHROPIC_API_KEY; .env is git-ignored
 python -m gmarge.analyst --weeks 8            # writes readouts/week-NN.json
+python -m gmarge.analyst --only 20,26         # just those weeks, leaving the rest
 python -m gmarge.analyst --weeks 8 --dry-run  # no API call at all
 ```
+
+`--only` is there because read-outs are reviewed one at a time: a week that
+needs regenerating can be run again without touching one a human has already
+approved.
 
 The model does not see the data, and it does not see a single number it could
 get wrong. For each week `build_facts()` computes the facts and **formats**
@@ -245,6 +250,11 @@ display for the read-out. `$531.6k`, `1.42x`, `39.2%` are decided in Python.
 strings and labels — there is no raw float in the prompt to round, rescale or
 mistype, and the check holds the reply to those strings character for
 character. `$531,637.44`, `$532k` and `0.5m` all fail.
+
+The `x` suffix means a multiple and nothing else. Reported ROAS is revenue over
+spend, so it is `4.96x`; frequency is impressions per person, so it is `2.88`;
+and the gap between two ratios is not itself a ratio, so an over-claim ratio
+that moves from 1.42x to 1.47x is up `4.9%`, not up `0.05x`.
 
 The read-out is asked for in a fixed order: anything flagged or missing first,
 then the over-claim ratio and what it means this week, then the channel behind
@@ -274,14 +284,21 @@ week. A week with a flag leads with it and cannot be called normal, and a week
 without one says nothing was flagged — which is not the same as saying
 everything is fine.
 
-**An incomplete week gets no verdict.** When a table is still filling in, every
-total that draws on it is listed in `completeness.totals_still_filling_in` and
-must be described as incomplete rather than as a rise or a fall. Week 26's ad
-spend is two days short, so its spend, attributed revenue and over-claim ratio
-are reported as still filling in; the week 8 GA4 gap touches no headline total,
-and says so. The counts come with it — days in the week, days with complete
-data, days affected, the affected dates — because a count worked out from a
-date range is a count nobody checked.
+**A lagging week's figures are withheld, not qualified.** A partial week is
+where a read-out is most tempted to over-read: spend is down because two days
+of it have not arrived, every channel is down for the same reason, and the
+over-claim ratio narrows because the platforms have not finished claiming. Each
+of those is the lag, described as a result. So when a table is still filling in,
+every total, change, ratio and channel figure that draws on it is **removed from
+the facts** and replaced by one `provisional until <date>` fact. Week 26 has no
+over-claim ratio, no spend or attributed-revenue deltas and no channel
+breakdown — there is nothing left to over-read. What is still complete is
+reported normally: Shopify is whole, so store revenue and its move are the
+week's news. The week 8 GA4 gap touches no headline total, and says so.
+
+The counts come with it — days in the week, days with complete data, days
+affected, the affected dates — because a count worked out from a date range is
+a count nobody checked.
 
 A reply that fails the check is sent back once with the offending figures
 named; if the second reply also fails, **nothing is saved**, the week is

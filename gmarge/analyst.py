@@ -56,7 +56,7 @@ WORD_LIMIT = 120
 
 # The headline figures, and how each is written. MONEY is $531.6k, RATIO is
 # 1.30x, PCT is 12.2%, COUNT is 7.
-MONEY, RATIO, PCT, COUNT, LEVEL = "money", "ratio", "pct", "count", "level"
+MONEY, RATIO, PCT, COUNT, LEVEL, PLAIN = "money", "ratio", "pct", "count", "level", "plain"
 
 HEADLINE = {
     "shopify_revenue": MONEY,
@@ -113,7 +113,19 @@ CHECK_LABELS = {
     "pixel_double_counting": "pixel double-counting",
 }
 
-# An anomaly metric's unit, in this module's formats.
+# How each metric the anomaly scan reports is written. The "x" suffix means a
+# multiple -- revenue over spend -- and nothing else earns it. Frequency is
+# impressions per person, which is a count per head, not a multiple: 2.88, not
+# 2.88x. CTR is a share, CPC and CPM are money.
+METRIC_KIND = {
+    "reported_roas": RATIO,
+    "cpc": MONEY,
+    "cpm": MONEY,
+    "ctr": PCT,
+    "frequency": PLAIN,
+}
+
+# A fallback for a metric added to the scan but not listed above.
 UNIT_KIND = {"money": MONEY, "percent": PCT, "x": RATIO, "ratio": RATIO}
 
 # Free text that is kept in the saved facts for the reviewer but withheld from
@@ -157,14 +169,20 @@ def level_display(value: float) -> str:
     return f"{abs(float(value)) * 100:.0f}%"
 
 
+def plain_display(value: float) -> str:
+    """``2.88`` -- a rate that is not a multiple of anything, so it takes no suffix."""
+    return f"{abs(float(value)):,.2f}"
+
+
 DISPLAY = {
     MONEY: money_display,
     RATIO: ratio_display,
     PCT: pct_display,
     COUNT: count_display,
     LEVEL: level_display,
+    PLAIN: plain_display,
 }
-PLACES = {MONEY: 2, RATIO: 4, PCT: 4, COUNT: 0, LEVEL: 4}
+PLACES = {MONEY: 2, RATIO: 4, PCT: 4, COUNT: 0, LEVEL: 4, PLAIN: 4}
 
 
 def fact(value, kind: str) -> dict | None:
@@ -236,12 +254,12 @@ def _headline(row: pd.Series) -> dict:
     return {key: fact(values[key], kind) for key, kind in HEADLINE.items()}
 
 
-def _change(current: dict, prior: dict, filling_in: set[str]) -> dict:
-    """Week-on-week change, with a direction and whether it can be read as one.
+def _change(current: dict, prior: dict) -> dict:
+    """Week-on-week change, with the direction as a word.
 
-    A total whose tables are still filling in gets its move reported as
-    incomplete: the figure is real arithmetic on the rows that have landed, and
-    saying it "fell" would be reading a reporting lag as a result.
+    Only totals that survived :func:`_provisional` reach this: a move computed
+    across a lagging table is not a move, and there is nothing to be gained by
+    computing one and labelling it doubtful.
     """
     out = {}
     for key, kind in HEADLINE.items():
@@ -251,10 +269,12 @@ def _change(current: dict, prior: dict, filling_in: set[str]) -> dict:
         absolute = now["value"] - before["value"]
         out[key] = {
             "label": LABELS[key],
-            "absolute": fact(absolute, kind),
+            # The gap between two multiples is not itself a multiple: an
+            # over-claim ratio that goes 1.42x to 1.47x has not moved "0.05x".
+            # The percentage move carries it, and the level is in `totals`.
+            "absolute": fact(absolute, kind) if kind == MONEY else None,
             "pct": fact(absolute / before["value"], PCT) if before["value"] else None,
             "direction": "up" if absolute > 0 else "down" if absolute < 0 else "flat",
-            "still_filling_in": key in filling_in,
         }
     return out
 
@@ -312,7 +332,6 @@ def _drivers(channels: list[dict], change: dict) -> dict:
             "label": LABELS[column],
             "total_change": total,
             "direction": change[column]["direction"],
-            "still_filling_in": change[column]["still_filling_in"],
             "channels": listed,
             "largest": listed[0],
         }
@@ -328,7 +347,7 @@ def _anomalies(anomalies: list[Anomaly], week: int) -> dict:
     """
     flags = []
     for flag in (a for a in anomalies if a.week == week):
-        kind = UNIT_KIND[METRICS_BY_KEY[flag.metric].unit]
+        kind = METRIC_KIND.get(flag.metric) or UNIT_KIND[METRICS_BY_KEY[flag.metric].unit]
         flags.append(
             {
                 "channel": flag.channel,
@@ -429,6 +448,47 @@ def _week_of_date(weekly: pd.DataFrame, day: str) -> int | None:
     return int(hit.iloc[0]["week"]) if len(hit) else None
 
 
+def _provisional(completeness: dict) -> dict | None:
+    """The one fact that stands in for every figure a reporting lag has spoiled.
+
+    A partial week is where a read-out is most tempted to over-read: spend is
+    down because two days of it have not arrived, every channel is down for the
+    same reason, and the over-claim ratio narrows because the platforms have
+    not finished claiming. Each of those is the lag, described as a result.
+
+    So the figures are not qualified, they are withheld -- and this single fact
+    replaces them. What survives is what does not touch the lagging tables:
+    store revenue is complete, and says so.
+    """
+    held_back = completeness["totals_still_filling_in"]
+    if not held_back:
+        return None
+
+    labels = [LABELS[key] for key in held_back]
+    until = completeness["affected_dates"][-1]
+    return {
+        "provisional_until": until,
+        "sources": completeness["affected_source_labels"],
+        "metrics": held_back,
+        "metric_labels": labels,
+        "channel_figures_withheld": completeness["channel_figures_still_filling_in"],
+        "note": (
+            f"{_sentence_list(labels)} are provisional until {until}: the days behind them are "
+            "still filling in. No total, week-on-week change, ratio or channel comparison is "
+            "computed for them and none appears in these FACTS, because a move measured across a "
+            "lagging table is the lag, not a result. Do not describe, infer or explain one."
+        ),
+    }
+
+
+def _sentence_list(items: list[str]) -> str:
+    """``a``, ``a and b``, ``a, b and c`` -- for prose inside a fact."""
+    items = list(items)
+    if len(items) <= 2:
+        return " and ".join(items)
+    return ", ".join(items[:-1]) + " and " + items[-1]
+
+
 def _holdouts(holdouts: pd.DataFrame, weekly: pd.DataFrame, week: int, start: str, end: str) -> dict:
     """Geo holdouts, with nothing measured before the test that measured it ended.
 
@@ -514,12 +574,18 @@ def build_facts(analysis: Analysis, week: int) -> dict:
     findings = _findings(analysis.findings, start, end)
     completeness = _completeness(findings, int(row["days"]))
     filling_in = set(completeness["totals_still_filling_in"])
+    provisional = _provisional(completeness)
 
-    headline = _headline(row)
+    # A figure built on a lagging table is withheld rather than qualified. A
+    # caveat next to a number is an invitation to explain the number anyway,
+    # and the explanation is always the same one: the days are not in yet.
+    headline = {key: value for key, value in _headline(row).items() if key not in filling_in}
     prior_headline = _headline(prior_row) if prior_row is not None else {}
-    change = _change(headline, prior_headline, filling_in) if prior_row is not None else None
-    channels = _channels(analysis.metrics["reported_roas_by_channel_week"], week, prior_week)
-    drivers = _drivers(channels, change) if change else None
+    change = _change(headline, prior_headline) if prior_row is not None else None
+
+    channel_figures = not completeness["channel_figures_still_filling_in"]
+    channels = _channels(analysis.metrics["reported_roas_by_channel_week"], week, prior_week) if channel_figures else []
+    drivers = _drivers(channels, change) if channels and change else None
 
     facts = {
         "brand": analysis.metrics["brand"],
@@ -546,18 +612,22 @@ def build_facts(analysis: Analysis, week: int) -> dict:
         },
         "anomalies": _anomalies(analysis.anomalies, week),
         "completeness": completeness,
+        "provisional": provisional,
         "quality_findings": findings,
-        "over_claim": {
-            "ratio": headline["over_claim_ratio"],
-            "over_claimed_revenue": headline["over_claimed_revenue"],
-            "platform_attributed_revenue": headline["platform_attributed_revenue"],
-            "shopify_revenue": headline["shopify_revenue"],
-            "still_filling_in": "over_claim_ratio" in filling_in,
-            "meaning": (
-                "The platforms between them claimed this much more revenue than the store took. "
-                "A ratio above 1.00x is the same order credited more than once."
-            ),
-        },
+        "over_claim": (
+            None
+            if "over_claim_ratio" in filling_in
+            else {
+                "ratio": headline["over_claim_ratio"],
+                "over_claimed_revenue": headline["over_claimed_revenue"],
+                "platform_attributed_revenue": headline["platform_attributed_revenue"],
+                "shopify_revenue": headline["shopify_revenue"],
+                "meaning": (
+                    "The platforms between them claimed this much more revenue than the store took. "
+                    "A ratio above 1.00x is the same order credited more than once."
+                ),
+            }
+        ),
         "totals": headline,
         "change_vs_prior_week": change,
         "channels": channels,
@@ -740,8 +810,10 @@ there is already written the way it must appear. These rules are hard:
 2. Write in this order, and lead with the first of these that applies:
    a. Anything flagged in `anomalies.flags`, and anything in `completeness`
       that is not complete. If there is a flag, it leads the read-out.
-   b. `over_claim`: the ratio, and what it means for this week.
-   c. `drivers`: the channel behind most of the week's change.
+   b. `over_claim`: the ratio, and what it means for this week. If it is null
+      the week has no reportable ratio -- see rule 6.
+   c. `drivers`: the channel behind most of the week's change. If `channels` is
+      empty there is no channel picture this week; do not sketch one.
    Then one sentence on a geo holdout, if the FACTS have one -- see rule 7.
 3. Quote figures exactly as they are written in the FACTS. `$531.6k` is
    written `$531.6k`, never `$531,600`, `$532k`, `0.5m` or `531.6`. Do no
@@ -757,10 +829,14 @@ there is already written the way it must appear. These rules are hard:
    only the counts in `completeness`: `days_in_week`, `days_with_complete_data`,
    `days_affected`, `affected_dates` and each entry's `source_label`. Do not
    count days and do not subtract one count from another.
-6. Any total named in `completeness.totals_still_filling_in` is incomplete. Say
-   it is still filling in. Do not call its move a rise, a fall, a drop, a
-   recovery or an improvement, and do not explain it -- the tables are not in
-   yet.
+6. If `provisional` is not null, the figures it names are not in the FACTS at
+   all -- no total, no change, no ratio, no channel breakdown. Say they are
+   provisional until `provisional.provisional_until` and stop there. Do not
+   say they rose, fell, narrowed, declined, held up, recovered or improved; do
+   not say what "all channels" did; do not reason about what the settled
+   figures will look like. A move measured across a lagging table is the lag,
+   not a result. What is still complete -- store revenue -- can be reported
+   normally, and `provisional.metrics` tells you what cannot.
 7. Geo holdouts. `holdouts.results` is the only place an incremental ROAS
    figure exists, and it is there only because that test has finished. Write
    the interval like this, exactly:
@@ -829,6 +905,11 @@ def _show(node) -> str:
     return "--" if node is None else node["display"]
 
 
+def _capitalise(sentence: str) -> str:
+    """Upper-case the first letter only, so ``GA4`` and ``TikTok`` survive."""
+    return sentence[:1].upper() + sentence[1:]
+
+
 def _join(items: list[str]) -> str:
     """``a``, ``a and b``, ``a, b and c``."""
     items = list(items)
@@ -863,51 +944,59 @@ def template_readout(facts: dict) -> str:
     if not completeness["complete"]:
         sources = completeness["affected_source_labels"]
         parts.append(
-            f"{_join(sources)} {'covers' if len(sources) == 1 else 'cover'} "
-            f"{_show(completeness['days_with_complete_data'])} of the week's "
-            f"{_show(completeness['days_in_week'])} days -- "
-            f"{_join(completeness['affected_dates'])} are "
-            f"{_join(sorted({a['label'] for a in completeness['affected']}))} -- "
-            + (
-                f"so {_join(filling_in_labels)} are incomplete."
-                if (filling_in_labels := completeness["totals_still_filling_in_labels"])
-                else "which leaves the headline totals unaffected."
+            _capitalise(
+                f"{_join(sources)} {'covers' if len(sources) == 1 else 'cover'} "
+                f"{_show(completeness['days_with_complete_data'])} of the week's "
+                f"{_show(completeness['days_in_week'])} days: "
+                f"{_join(completeness['affected_dates'])} are "
+                f"{_join(sorted({a['label'] for a in completeness['affected']}))}."
+            )
+            # what that costs is the provisional sentence's job, below
+            + ("" if completeness["totals_still_filling_in"] else " No headline total draws on it.")
+        )
+
+    # what a lagging week can say instead: the provisional fact, and the one
+    # total that does not touch the lagging tables
+    provisional = facts["provisional"]
+    if provisional:
+        parts.append(
+            _capitalise(
+                f"{_join(provisional['metric_labels'])} are provisional until "
+                f"{provisional['provisional_until']}, so no total, change or ratio is reported "
+                "for them, by channel or overall."
             )
         )
 
-    # (b) the over-claim ratio
+    # (b) the over-claim ratio, where there is one to report
     over_claim = facts["over_claim"]
-    if over_claim["still_filling_in"]:
-        parts.append(
-            f"The over-claim ratio stands at {_show(over_claim['ratio'])} on the rows in so far."
-        )
-    else:
+    if over_claim:
         parts.append(
             f"The platforms claimed {_show(over_claim['platform_attributed_revenue'])} against "
             f"{_show(over_claim['shopify_revenue'])} of store revenue, a ratio of "
             f"{_show(over_claim['ratio'])}."
         )
 
+    revenue = (facts["change_vs_prior_week"] or {}).get("shopify_revenue")
+    if provisional and revenue:
+        parts.append(
+            f"Store revenue is complete, at {_show(facts['totals']['shopify_revenue'])}, "
+            f"{revenue['direction']} {_show(revenue['pct'])} on the prior week."
+        )
+
     # (c) the channel behind most of the change
+    # (c) the channel behind most of the change, where the channel tables are in
     driver = (facts["drivers"] or {}).get("platform_attributed_revenue")
     if driver and driver["largest"]:
+        # A share over 100% is real -- channels pulling against each other --
+        # but "285.2% of the change" explains nothing, so it is left to the
+        # facts rather than written into a sentence.
         largest = driver["largest"]
-        if driver["still_filling_in"]:
-            # Not "moved most": the tables are not in, so there is no move yet.
-            parts.append(
-                f"{largest['channel']} accounts for most of the difference against last week, "
-                f"{_show(largest['change'])}, on tables still filling in."
-            )
-        else:
-            # A share over 100% is real -- channels pulling against each other --
-            # but "285.2% of the change" explains nothing, so it is left to the
-            # facts rather than written into a sentence.
-            share = largest["share_of_change"]
-            within = share is not None and abs(share["value"]) <= 1.0
-            parts.append(
-                f"{largest['channel']} moved attributed revenue most, {largest['direction']} "
-                f"{_show(largest['change'])}" + (f", {_show(share)} of the change." if within else ".")
-            )
+        share = largest["share_of_change"]
+        within = share is not None and abs(share["value"]) <= 1.0
+        parts.append(
+            f"{largest['channel']} moved attributed revenue most, {largest['direction']} "
+            f"{_show(largest['change'])}" + (f", {_show(share)} of the change." if within else ".")
+        )
 
     # the holdout: a result only in the week the test concluded, otherwise the
     # fact that one is running and when the answer is due
@@ -996,11 +1085,44 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         description="Generate weekly read-outs into readouts/. Offline; the app never does this.",
     )
     parser.add_argument("--weeks", type=int, default=DEFAULT_WEEKS, help="how many of the most recent weeks (default 8)")
+    parser.add_argument(
+        "--only",
+        default=None,
+        metavar="N,N",
+        help="regenerate just these weeks (e.g. --only 20,26), leaving the rest alone",
+    )
     parser.add_argument("--data", default=DEFAULT_DATA_DIR, help="data directory (default data)")
     parser.add_argument("--out", default=DEFAULT_READOUT_DIR, help="where to write (default readouts)")
     parser.add_argument("--model", default=None, help=f"model id (default {llm.MODEL_VARIABLE} or {llm.DEFAULT_MODEL})")
     parser.add_argument("--dry-run", action="store_true", help="write template read-outs, with no API call")
     return parser.parse_args(argv)
+
+
+def chosen_weeks(args: argparse.Namespace, available: list[int]) -> list[int]:
+    """Which weeks to write: ``--only`` if given, otherwise the last ``--weeks``.
+
+    ``--only`` exists so that a week that failed can be run again without
+    touching read-outs a human has already approved.
+    """
+    if args.only is None:
+        return available[-args.weeks :]
+
+    wanted = []
+    for piece in args.only.split(","):
+        piece = piece.strip()
+        if not piece:
+            continue
+        if not piece.lstrip("-").isdigit():
+            raise ValueError(f"--only takes week numbers separated by commas, not {piece!r}")
+        week = int(piece)
+        if week not in available:
+            raise ValueError(f"week {week} is not in the data (weeks {available[0]} to {available[-1]})")
+        if week not in wanted:
+            wanted.append(week)
+
+    if not wanted:
+        raise ValueError("--only needs at least one week number")
+    return sorted(wanted)
 
 
 def _fail(week: int, detail: str, out_dir: str | Path, failed: list[int]) -> None:
@@ -1014,16 +1136,21 @@ def _fail(week: int, detail: str, out_dir: str | Path, failed: list[int]) -> Non
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    if args.weeks < 1:
+    if args.only is None and args.weeks < 1:
         print("--weeks must be at least 1", file=sys.stderr)
         return 2
 
     analysis = analyse(args.data)
-    weeks = analysis.weeks[-args.weeks :]
+    try:
+        weeks = chosen_weeks(args, analysis.weeks)
+    except ValueError as exc:
+        print(exc, file=sys.stderr)
+        return 2
     model = None if args.dry_run else llm.model_id(args.model)
 
+    listed = ", ".join(str(w) for w in weeks) if args.only else f"{weeks[0]} to {weeks[-1]}"
     print(
-        f"{len(weeks)} week(s): {weeks[0]} to {weeks[-1]}"
+        f"{len(weeks)} week(s): {listed}"
         + ("  [dry run, no API calls]" if args.dry_run else f"  [{model}]"),
         flush=True,
     )

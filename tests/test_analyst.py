@@ -413,7 +413,7 @@ def test_a_clean_week_is_complete(analysis):
 
 
 def test_only_totals_drawn_from_an_incomplete_table_are_held_back(analysis):
-    """A GA4 gap does not make store revenue incomplete, and must not say it does."""
+    """A GA4 gap does not make store revenue provisional, and must not say it does."""
     lag = next(f for f in analysis.findings if f.check == "reporting_lag")
     lagged = facts_for(analysis, _week_of(analysis, lag.start_date))["completeness"]
 
@@ -427,23 +427,88 @@ def test_only_totals_drawn_from_an_incomplete_table_are_held_back(analysis):
     if gap is not None and gap.source == "ga4_sessions":
         facts = facts_for(analysis, _week_of(analysis, gap.start_date))
         assert facts["completeness"]["complete"] is False
-        assert facts["completeness"]["totals_still_filling_in"] == []
-        assert "unaffected" in an.template_readout(facts)
+        assert facts["provisional"] is None
+        assert facts["over_claim"] is not None
+        assert "No headline total draws on it" in an.template_readout(facts)
 
 
-def test_an_incomplete_total_is_never_called_a_rise_or_a_fall(analysis):
+def test_a_lagging_week_has_no_deltas_or_ratios_to_over_read(analysis):
+    """Week 26's facts cannot support "all channels declined" or "the ratio narrowed".
+
+    The read-out that said both was reading a reporting lag as a result. The
+    fix is not a sterner prompt: the figures are gone, so there is nothing to
+    over-read and nothing to explain.
+    """
+    lag = next(f for f in analysis.findings if f.check == "reporting_lag")
+    week = _week_of(analysis, lag.start_date)
+    facts = facts_for(analysis, week)
+
+    assert facts["provisional"] is not None
+    change = facts["change_vs_prior_week"]
+
+    # no over-claim ratio, and no change in one
+    assert facts["over_claim"] is None
+    assert "over_claim_ratio" not in facts["totals"]
+    assert "over_claim_ratio" not in change
+    assert "blended_reported_roas" not in facts["totals"]
+
+    # no platform or spend deltas, by channel or overall
+    for key in ("ad_spend", "platform_attributed_revenue", "over_claimed_revenue"):
+        assert key not in change, f"{key} delta survived into a lagging week"
+        assert key not in facts["totals"]
+    assert facts["channels"] == []
+    assert facts["drivers"] is None
+
+    # nothing anywhere in the week's facts carries a reported ROAS either
+    assert "reported_roas" not in _keys(facts["totals"])
+    assert not [k for k in _keys(change) if "roas" in k or "ratio" in k]
+
+
+def test_a_lagging_week_still_reports_what_is_complete(analysis):
+    """Shopify is complete, so store revenue and its move are still the week's news."""
     lag = next(f for f in analysis.findings if f.check == "reporting_lag")
     facts = facts_for(analysis, _week_of(analysis, lag.start_date))
-    text = an.template_readout(facts).lower()
 
-    assert facts["completeness"]["totals_still_filling_in"]
-    assert text.count("still filling in") >= 2
-    assert [word for word in RISE_AND_FALL if word in text] == []
+    assert facts["totals"]["shopify_revenue"]["display"].startswith("$")
+    assert facts["change_vs_prior_week"]["shopify_revenue"]["pct"]["display"].endswith("%")
+
+    text = an.template_readout(facts)
+    assert facts["totals"]["shopify_revenue"]["display"] in text
+    assert "Store revenue is complete" in text
 
 
-def test_the_prompt_forbids_reading_an_incomplete_total_as_a_move():
-    assert "totals_still_filling_in" in an.SYSTEM
-    assert "still filling in" in an.SYSTEM
+def test_the_provisional_fact_names_what_it_replaces(analysis):
+    lag = next(f for f in analysis.findings if f.check == "reporting_lag")
+    facts = facts_for(analysis, _week_of(analysis, lag.start_date))
+    provisional = facts["provisional"]
+
+    assert provisional["provisional_until"] == facts["completeness"]["affected_dates"][-1]
+    assert provisional["metrics"] == facts["completeness"]["totals_still_filling_in"]
+    assert provisional["channel_figures_withheld"] is True
+    assert "ad spend" in provisional["sources"] and "GA4 sessions" in provisional["sources"]
+    assert "provisional until" in provisional["note"]
+
+    text = an.template_readout(facts)
+    assert f"provisional until {provisional['provisional_until']}" in text
+    assert [word for word in RISE_AND_FALL if word in text.lower()] == []
+    assert "narrow" not in text.lower() and "all channels" not in text.lower()
+
+
+def test_a_complete_week_has_no_provisional_fact(analysis):
+    dirty = {_week_of(analysis, f.start_date) for f in analysis.findings}
+    first = analysis.weeks[0]  # week one has no prior week to compare against
+    clean = next(w for w in analysis.weeks if w not in dirty and w != first)
+    facts = facts_for(analysis, clean)
+
+    assert facts["provisional"] is None
+    assert facts["over_claim"] is not None
+    assert facts["channels"] and facts["drivers"]
+
+
+def test_the_prompt_forbids_reading_a_lagging_total_as_a_move():
+    assert "provisional" in an.SYSTEM
+    assert "provisional_until" in an.SYSTEM
+    assert "narrowed" in an.SYSTEM and "all channels" in an.SYSTEM
     assert "anomalies" in an.SYSTEM and "normal range" in an.SYSTEM
 
 
@@ -759,3 +824,103 @@ def test_week_20_leads_with_the_frequency_flag(analysis):
     assert "every metric" not in text.lower()
     assert "nothing was flagged" not in text.lower()
     assert an.check_numbers(text, facts) == []
+
+
+# --------------------------------------------------------------------------
+# 13. The "x" suffix means a multiple, and nothing else
+# --------------------------------------------------------------------------
+
+# Every figure written with an "x" is revenue over spend, or a ratio of two
+# such. Frequency is impressions per person -- a count per head, not a
+# multiple -- so it takes no suffix.
+MULTIPLES = {
+    "over_claim_ratio", "blended_reported_roas", "ratio",
+    "incremental_roas", "interval_low", "interval_high",
+    "reported_roas_in_window", "over_claim_multiple", "reported_roas",
+}
+
+
+def test_frequency_is_a_plain_number(analysis):
+    week = next(a.week for a in analysis.anomalies if a.metric == "frequency")
+    flag = next(f for f in facts_for(analysis, week)["anomalies"]["flags"] if f["metric"] == "frequency")
+
+    assert flag["value"]["display"] == "2.88"
+    assert not flag["value"]["display"].endswith("x")
+    assert not flag["trailing_median"]["display"].endswith("x")
+    assert an.plain_display(2.8765) == "2.88"
+
+
+def test_every_metric_the_scan_reports_has_a_deliberate_format():
+    from gmarge.anomalies import METRICS
+
+    assert set(an.METRIC_KIND) == {m.key for m in METRICS}
+    assert an.METRIC_KIND["frequency"] == an.PLAIN
+    assert an.METRIC_KIND["reported_roas"] == an.RATIO
+    assert an.METRIC_KIND["ctr"] == an.PCT
+    assert an.METRIC_KIND["cpc"] == an.METRIC_KIND["cpm"] == an.MONEY
+
+
+def test_no_metric_that_is_not_a_multiple_carries_an_x(analysis):
+    """Anything written 1.42x has to be one number divided by another like it.
+
+    A flag's `value` is whatever its own metric is, so those are judged by
+    metric rather than by field name -- that is the case frequency broke.
+    """
+    for week in analysis.weeks:
+        facts = facts_for(analysis, week)
+
+        for flag in facts["anomalies"]["flags"]:
+            multiple = an.METRIC_KIND[flag["metric"]] == an.RATIO
+            for field in ("value", "trailing_median"):
+                assert flag[field]["display"].endswith("x") == multiple, f"{flag['metric']}.{field}"
+
+        for path, node in _pairs(facts):
+            if not node["display"].endswith("x") or ".anomalies.flags" in path:
+                continue
+            field = path.rsplit(".", 1)[-1].split("[")[0]
+            assert field in MULTIPLES, f"{path} is written {node['display']} but is not a multiple"
+
+
+def test_a_flagged_rate_is_written_the_way_its_metric_is(analysis):
+    for week in analysis.weeks:
+        for flag in facts_for(analysis, week)["anomalies"]["flags"]:
+            kind = an.METRIC_KIND[flag["metric"]]
+            assert flag["value"]["display"] == an.DISPLAY[kind](flag["value"]["value"])
+            assert flag["trailing_median"]["display"] == an.DISPLAY[kind](flag["trailing_median"]["value"])
+
+
+# --------------------------------------------------------------------------
+# 14. --only, for regenerating a week without touching an approved one
+# --------------------------------------------------------------------------
+
+
+def test_only_writes_just_the_weeks_named(dataset, tmp_path, capsys):
+    an.main(["--only", "20,26", "--data", str(dataset.path), "--out", str(tmp_path), "--dry-run"])
+    capsys.readouterr()
+
+    assert sorted(p.name for p in tmp_path.glob("week-*.json")) == ["week-20.json", "week-26.json"]
+
+
+def test_only_leaves_an_approved_read_out_untouched(dataset, tmp_path, capsys):
+    an.main(["--weeks", "3", "--data", str(dataset.path), "--out", str(tmp_path), "--dry-run"])
+    approved = an.readout_path(tmp_path, an.analyse(dataset.path).weeks[-3])
+    before = approved.read_text()
+
+    an.main(["--only", "26", "--data", str(dataset.path), "--out", str(tmp_path), "--dry-run"])
+    capsys.readouterr()
+
+    assert approved.read_text() == before
+
+
+@pytest.mark.parametrize("only", ["99", "abc", "", "20,99"])
+def test_only_refuses_a_week_it_cannot_write(dataset, tmp_path, only, capsys):
+    code = an.main(["--only", only, "--data", str(dataset.path), "--out", str(tmp_path), "--dry-run"])
+    capsys.readouterr()
+
+    assert code == 2
+    assert list(tmp_path.glob("week-*.json")) == []
+
+
+def test_only_takes_weeks_in_any_order_and_ignores_repeats(analysis):
+    args = an.parse_args(["--only", " 26, 20 ,26"])
+    assert an.chosen_weeks(args, analysis.weeks) == [20, 26]

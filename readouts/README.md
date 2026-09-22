@@ -8,7 +8,8 @@ calls an AI API at runtime. Every number in a read-out is computed *and
 formatted* in Python and passed to the model as a display string; the model's
 only job is to quote it.
 
-Written by `python -m gmarge.analyst --weeks 8`, one file per week:
+Written by `python -m gmarge.analyst --weeks 8`, one file per week. To redo a
+single week without touching the approved ones, `--only 20,26`.
 
 | field | |
 |---|---|
@@ -37,5 +38,9 @@ Three things the check cannot do for you, so read for them:
 * **Does a holdout result belong in this week?** It may appear in the week the
   test concluded and once more the week after. Earlier than that, the answer
   did not exist yet.
+* **Does a lagging week draw a conclusion it cannot?** Figures built on a table
+  that is still filling in are absent from the facts entirely, replaced by one
+  `provisional until <date>` entry. A read-out that explains a decline in one
+  of them is explaining the lag.
 
 These are drafts until a human has compared the prose with the facts beside it.

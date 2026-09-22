@@ -248,9 +248,24 @@ character. `$531,637.44`, `$532k` and `0.5m` all fail.
 
 The read-out is asked for in a fixed order: anything flagged or missing first,
 then the over-claim ratio and what it means this week, then the channel behind
-most of the change, then one sentence on any geo holdout whose window covers
-the week — the only incremental figure in the facts, and labelled as the
-window's result rather than the week's.
+most of the change, then one sentence on a geo holdout if there is one to
+report.
+
+**A holdout has no result until it ends.** A four-week test has no answer in
+week two, so a week inside the window is told only that a test is running and
+which week the answer is due — not the lift, not the incremental ROAS, not even
+the reported ROAS for the window, because all three are computed from days that
+have not happened yet in that week's world. The result appears in the week the
+test concludes and may be repeated once the week after. The interval comes as
+three display strings and is written `1.99x (90% interval 1.89x to 2.11x)`,
+never "with 90% confidence", which says something else.
+
+Names get the same care as figures. `GA4 sessions`, `Core | Broad 25-44` and
+`Region 03` all carry digits, and a read-out that mentions GA4 is naming a
+table, not quoting a number — so entity names and the digit-bearing words
+inside them come out of the text before what is left is checked figure by
+figure. A display string is never treated as a name, or the check would mask
+the thing it exists to test.
 
 **One source of truth for "normal".** Whether a week is outside its normal
 range is `gmarge/anomalies.py`'s verdict and nobody else's. The analyst scores
@@ -269,8 +284,12 @@ data, days affected, the affected dates — because a count worked out from a
 date range is a count nobody checked.
 
 A reply that fails the check is sent back once with the offending figures
-named; if the second reply also fails, **nothing is saved** and the week is
-reported as an error. A failure prints each figure with the sentence it was
+named; if the second reply also fails, **nothing is saved**, the week is
+reported as an error, and any read-out already on disk for that week is
+deleted — last run's answer under this week's name is worse than a gap, which
+is at least obvious. Read-outs are written beside their destination and moved
+onto it, so a run that dies halfway cannot leave half a file where a whole one
+was. A failure prints each figure with the sentence it was
 written in — `6` on its own says nothing, `'6' in: only 6 of 7 days reported`
 says the model was counting days — so a failure can be diagnosed without
 running it again.

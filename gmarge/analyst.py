@@ -56,7 +56,7 @@ WORD_LIMIT = 120
 
 # The headline figures, and how each is written. MONEY is $531.6k, RATIO is
 # 1.30x, PCT is 12.2%, COUNT is 7.
-MONEY, RATIO, PCT, COUNT = "money", "ratio", "pct", "count"
+MONEY, RATIO, PCT, COUNT, LEVEL = "money", "ratio", "pct", "count", "level"
 
 HEADLINE = {
     "shopify_revenue": MONEY,
@@ -97,6 +97,14 @@ DRIVEN = ("ad_spend", "platform_attributed_revenue")
 # The checks that mean a day is missing or still filling in, as opposed to
 # present but wrong. Only these bear on whether the week's data is complete.
 INCOMPLETE_CHECKS = ("reporting_lag", "missing_days")
+
+# What a read-out calls each table. "GA4 sessions" is the name a reader knows,
+# and a name the figure check has to know about too -- see _entity_names.
+SOURCE_LABELS = {
+    "ga4_sessions": "GA4 sessions",
+    "ad_spend": "ad spend",
+    "shopify_orders": "Shopify orders",
+}
 
 CHECK_LABELS = {
     "reporting_lag": "still filling in",
@@ -144,8 +152,19 @@ def count_display(value: float) -> str:
     return f"{int(round(float(value))):,}"
 
 
-DISPLAY = {MONEY: money_display, RATIO: ratio_display, PCT: pct_display, COUNT: count_display}
-PLACES = {MONEY: 2, RATIO: 4, PCT: 4, COUNT: 0}
+def level_display(value: float) -> str:
+    """``90%`` -- a confidence level, which is always a round number of percent."""
+    return f"{abs(float(value)) * 100:.0f}%"
+
+
+DISPLAY = {
+    MONEY: money_display,
+    RATIO: ratio_display,
+    PCT: pct_display,
+    COUNT: count_display,
+    LEVEL: level_display,
+}
+PLACES = {MONEY: 2, RATIO: 4, PCT: 4, COUNT: 0, LEVEL: 4}
 
 
 def fact(value, kind: str) -> dict | None:
@@ -382,12 +401,14 @@ def _completeness(findings: list[dict], days_in_week: int) -> dict:
         "days_with_complete_data": fact(days_in_week - len(affected_dates), COUNT),
         "affected_dates": affected_dates,
         "affected_sources": sorted(sources),
+        "affected_source_labels": [SOURCE_LABELS.get(s, s) for s in sorted(sources)],
         "totals_still_filling_in": filling_in,
         "totals_still_filling_in_labels": [LABELS[key] for key in filling_in],
         "channel_figures_still_filling_in": "ad_spend" in sources,
         "affected": [
             {
                 "source": f["source"],
+                "source_label": SOURCE_LABELS.get(f["source"], f["source"]),
                 "check": f["check"],
                 "label": f["label"],
                 "start_date": f["start_date"],
@@ -400,41 +421,77 @@ def _completeness(findings: list[dict], days_in_week: int) -> dict:
     }
 
 
-def _holdouts(holdouts: pd.DataFrame, start: str, end: str) -> dict:
-    """Geo holdouts whose window overlaps the week.
+def _week_of_date(weekly: pd.DataFrame, day: str) -> int | None:
+    """The week a date falls in, or ``None`` if it is outside the data."""
+    hit = weekly[
+        (weekly["week_start"].dt.date.astype(str) <= day) & (weekly["week_end"].dt.date.astype(str) >= day)
+    ]
+    return int(hit.iloc[0]["week"]) if len(hit) else None
 
-    A holdout measures a whole four-week window, not a single week inside it,
-    and the note says so: these are the only incremental figures in the facts,
-    and they must not be read as this week's result.
+
+def _holdouts(holdouts: pd.DataFrame, weekly: pd.DataFrame, week: int, start: str, end: str) -> dict:
+    """Geo holdouts, with nothing measured before the test that measured it ended.
+
+    A holdout is a four-week difference-in-differences. Its result does not
+    exist until the window closes, so a week inside the window is told only
+    that a test is running and which week the answer is due -- no lift, no
+    incremental ROAS, not even the reported ROAS for the window, because all
+    three are computed from days that have not happened yet in that week's
+    world. Writing one into an earlier week's read-out would be hindsight
+    presented as analysis.
+
+    The result appears in the week the test concludes, and may be repeated once
+    the week after while it is still news. After that it is history and belongs
+    on the channel page, not in a weekly read-out.
     """
-    running = []
+    running, results = [], []
     for row in holdouts.itertuples():
         window_start = row.start_date.date().isoformat()
         window_end = row.end_date.date().isoformat()
-        if window_start > end or window_end < start:
+        concluded_in = _week_of_date(weekly, window_end)
+        if concluded_in is None:
             continue
-        running.append(
-            {
-                "channel": row.channel,
-                "window_start": window_start,
-                "window_end": window_end,
-                "covers_whole_week": bool(window_start <= start and window_end >= end),
-                "incremental_roas": fact(row.incremental_roas, RATIO),
-                "incremental_roas_ci_low": fact(row.incremental_roas_ci_low, RATIO),
-                "incremental_roas_ci_high": fact(row.incremental_roas_ci_high, RATIO),
-                "reported_roas_in_window": fact(row.reported_roas_in_window, RATIO),
-                "over_claim_multiple": fact(row.over_claim_multiple, RATIO),
-                "lift_pct": fact(row.lift_pct, PCT),
-                "paused_spend_estimate": fact(row.paused_spend_estimate, MONEY),
-                "confidence": fact(row.confidence, PCT),
-            }
-        )
+
+        if week < concluded_in and window_start <= end:
+            running.append(
+                {
+                    "channel": row.channel,
+                    "window_start": window_start,
+                    "window_end": window_end,
+                    "result_due_in_week": fact(concluded_in, COUNT),
+                    "status": "running -- no result yet",
+                }
+            )
+        elif week in (concluded_in, concluded_in + 1):
+            results.append(
+                {
+                    "channel": row.channel,
+                    "window_start": window_start,
+                    "window_end": window_end,
+                    "concluded_in_week": fact(concluded_in, COUNT),
+                    "weeks_since_result": fact(week - concluded_in, COUNT),
+                    "status": "concluded this week" if week == concluded_in else "concluded last week",
+                    "incremental_roas": fact(row.incremental_roas, RATIO),
+                    "interval_level": fact(row.confidence, LEVEL),
+                    "interval_low": fact(row.incremental_roas_ci_low, RATIO),
+                    "interval_high": fact(row.incremental_roas_ci_high, RATIO),
+                    "reported_roas_in_window": fact(row.reported_roas_in_window, RATIO),
+                    "over_claim_multiple": fact(row.over_claim_multiple, RATIO),
+                    "lift_pct": fact(row.lift_pct, PCT),
+                    "paused_spend_estimate": fact(row.paused_spend_estimate, MONEY),
+                }
+            )
+
     return {
         "n_running": fact(len(running), COUNT),
         "running": running,
+        "n_with_results": fact(len(results), COUNT),
+        "results": results,
         "note": (
-            "Measured over the whole holdout window, not this week alone. "
-            "Incremental ROAS is what the channel is worth; reported ROAS is what the platform claims."
+            "A result is measured over the whole holdout window, not this week alone, and only "
+            "exists once the window has closed. Incremental ROAS is what the channel is worth; "
+            "reported ROAS is what the platform claims. Write an interval as "
+            "1.99x (90% interval 1.89x to 2.11x)."
         ),
     }
 
@@ -505,7 +562,7 @@ def build_facts(analysis: Analysis, week: int) -> dict:
         "change_vs_prior_week": change,
         "channels": channels,
         "drivers": drivers,
-        "holdouts": _holdouts(analysis.metrics["holdouts"], start, end),
+        "holdouts": _holdouts(analysis.metrics["holdouts"], weekly, week, start, end),
         "notes": [
             "Store revenue cannot be split by channel; platform-attributed revenue is not store revenue.",
             "Reported ROAS is what the platforms claim. Only a holdout says what a channel is worth.",
@@ -579,13 +636,39 @@ def _strings(node, found: set[str]) -> set[str]:
     return found
 
 
-def _mask(text: str, names: list[str]) -> str:
-    """Blank out names quoted verbatim from the facts.
+WORD_BREAK = re.compile(r"[\s,;:()\[\]/]+")
 
-    Names carry digits -- the ad set ``Core | Broad 25-44``, the region
-    ``Region 03`` -- and quoting one is not writing a figure. Longest first, so
-    a name inside a longer name cannot be half-masked.
+
+def _entity_names(shown: set[str]) -> list[str]:
+    """The names in the facts that carry digits, and the words inside them.
+
+    Plenty of real names have a digit in them -- the table ``GA4 sessions``, the
+    ad set ``Core | Broad 25-44``, a campaign, a source/medium, a region, a
+    date. Writing one is naming a thing, not quoting a figure, so they come out
+    of the text before what is left is checked figure by figure.
+
+    Whole names are not enough: a read-out that says "GA4 sessions" mentions
+    ``GA4``, and a check that only knew the full label would read the ``4`` as
+    an invented number. So each name's digit-bearing words are masked too.
+    A word that is itself a figure -- a display like ``$531.6k``, or a bare
+    ``2025`` -- is never treated as a name, or the check would mask the very
+    thing it exists to test.
     """
+    names = set()
+    for string in shown:
+        if not any(character.isdigit() for character in string) or FIGURE.fullmatch(string):
+            continue
+        names.add(string)
+        for word in WORD_BREAK.split(string):
+            word = word.strip(".")
+            if word and any(c.isdigit() for c in word) and not FIGURE.fullmatch(word):
+                names.add(word)
+    return sorted(names, key=len, reverse=True)
+
+
+def _mask(text: str, names: list[str]) -> str:
+    """Blank out names quoted from the facts. Longest first, so a name inside a
+    longer name cannot be half-masked."""
     for name in names:
         text = text.replace(name, " ")
     return text
@@ -607,11 +690,7 @@ def check_numbers(text: str, facts: dict) -> list[str]:
     """
     shown = _strings(prompt_facts(facts), set())
     allowed = {s.casefold() for s in shown if FIGURE.fullmatch(s)}
-    names = sorted(
-        (s for s in shown if any(c.isdigit() for c in s) and not FIGURE.fullmatch(s)),
-        key=len,
-        reverse=True,
-    )
+    names = _entity_names(shown)
     dates = " ".join(s for s in shown if DATE.search(s))
 
     unsupported = []
@@ -633,12 +712,7 @@ def offending_sentences(text: str, unsupported: list[str], facts: dict) -> list[
     Sentences are searched with the check's own tokeniser rather than for the
     text of the figure, because ``6`` is a substring of ``$563,472.11``.
     """
-    shown = _strings(prompt_facts(facts), set())
-    names = sorted(
-        (s for s in shown if any(c.isdigit() for c in s) and not FIGURE.fullmatch(s)),
-        key=len,
-        reverse=True,
-    )
+    names = _entity_names(_strings(prompt_facts(facts), set()))
     sentences = [s.strip() for s in SENTENCE.split(text.strip()) if s.strip()]
 
     lines = []
@@ -668,8 +742,7 @@ there is already written the way it must appear. These rules are hard:
       that is not complete. If there is a flag, it leads the read-out.
    b. `over_claim`: the ratio, and what it means for this week.
    c. `drivers`: the channel behind most of the week's change.
-   Then, if `holdouts.running` is not empty, one sentence on what that holdout
-   measured -- saying it is the holdout window, not this week.
+   Then one sentence on a geo holdout, if the FACTS have one -- see rule 7.
 3. Quote figures exactly as they are written in the FACTS. `$531.6k` is
    written `$531.6k`, never `$531,600`, `$532k`, `0.5m` or `531.6`. Do no
    arithmetic of any kind: no adding, no subtracting, no percentages of your
@@ -682,13 +755,21 @@ there is already written the way it must appear. These rules are hard:
    everything is fine, so do not say everything is fine.
 5. If `completeness.complete` is false, say so and name what is missing, using
    only the counts in `completeness`: `days_in_week`, `days_with_complete_data`,
-   `days_affected`, `affected_dates` and each entry's `source`. Do not count
-   days and do not subtract one count from another.
+   `days_affected`, `affected_dates` and each entry's `source_label`. Do not
+   count days and do not subtract one count from another.
 6. Any total named in `completeness.totals_still_filling_in` is incomplete. Say
    it is still filling in. Do not call its move a rise, a fall, a drop, a
    recovery or an improvement, and do not explain it -- the tables are not in
    yet.
-7. This is synthetic sample data for a brand that does not exist. Do not write
+7. Geo holdouts. `holdouts.results` is the only place an incremental ROAS
+   figure exists, and it is there only because that test has finished. Write
+   the interval like this, exactly:
+       incremental ROAS of 1.99x (90% interval 1.89x to 2.11x)
+   Never write "with 90% confidence", never "plus or minus", and never a bound
+   on its own. An entry in `holdouts.running` has no result yet: you may say
+   the test is running and which week the result is due, and nothing else about
+   it. Do not guess at how it is going.
+8. This is synthetic sample data for a brand that does not exist. Do not write
    as though it were a real company's results, and do not recommend budget
    decisions."""
 
@@ -780,7 +861,7 @@ def template_readout(facts: dict) -> str:
         parts.append("Nothing was flagged this week.")
 
     if not completeness["complete"]:
-        sources = completeness["affected_sources"]
+        sources = completeness["affected_source_labels"]
         parts.append(
             f"{_join(sources)} {'covers' if len(sources) == 1 else 'cover'} "
             f"{_show(completeness['days_with_complete_data'])} of the week's "
@@ -828,14 +909,22 @@ def template_readout(facts: dict) -> str:
                 f"{_show(largest['change'])}" + (f", {_show(share)} of the change." if within else ".")
             )
 
-    # the holdout, if one was running
-    for holdout in facts["holdouts"]["running"][:1]:
+    # the holdout: a result only in the week the test concluded, otherwise the
+    # fact that one is running and when the answer is due
+    for holdout in facts["holdouts"]["results"][:1]:
         parts.append(
             f"The {holdout['channel']} holdout ({holdout['window_start']} to "
             f"{holdout['window_end']}) measured incremental ROAS of "
-            f"{_show(holdout['incremental_roas'])} against a reported "
-            f"{_show(holdout['reported_roas_in_window'])}."
+            f"{_show(holdout['incremental_roas'])} ({_show(holdout['interval_level'])} interval "
+            f"{_show(holdout['interval_low'])} to {_show(holdout['interval_high'])}) against a "
+            f"reported {_show(holdout['reported_roas_in_window'])}."
         )
+    else:
+        for holdout in facts["holdouts"]["running"][:1]:
+            parts.append(
+                f"The {holdout['channel']} holdout is running to {holdout['window_end']}; "
+                f"the result is due in week {_show(holdout['result_due_in_week'])}."
+            )
 
     parts.append("Template read-out: no model was called.")
     return " ".join(parts)
@@ -868,9 +957,31 @@ def readout_path(out_dir: str | Path, week: int) -> Path:
 
 
 def write_readout(out_dir: str | Path, record: dict) -> Path:
+    """Write the read-out, replacing any previous one only once it is complete.
+
+    The file is written beside its destination and moved onto it, so a run that
+    dies halfway cannot leave a half-written read-out where a whole one was.
+    """
     path = readout_path(out_dir, record["week"])
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(record, indent=2, default=str) + "\n")
+
+    partial = path.with_suffix(".json.partial")
+    partial.write_text(json.dumps(record, indent=2, default=str) + "\n")
+    partial.replace(path)
+    return path
+
+
+def discard_readout(out_dir: str | Path, week: int) -> Path | None:
+    """Remove the read-out for a week that has just failed, if one is there.
+
+    A failed week must not leave last run's answer on disk: the file would say
+    nothing about being stale, and the next reader would take it for this
+    week's work. Better a gap, which is obvious, than a lie, which is not.
+    """
+    path = readout_path(out_dir, week)
+    if not path.exists():
+        return None
+    path.unlink()
     return path
 
 
@@ -890,6 +1001,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--model", default=None, help=f"model id (default {llm.MODEL_VARIABLE} or {llm.DEFAULT_MODEL})")
     parser.add_argument("--dry-run", action="store_true", help="write template read-outs, with no API call")
     return parser.parse_args(argv)
+
+
+def _fail(week: int, detail: str, out_dir: str | Path, failed: list[int]) -> None:
+    """Report a week that could not be written, and clear out any stale file."""
+    print(f"  week {week:>2}: NOT SAVED -- {detail}", file=sys.stderr)
+    discarded = discard_readout(out_dir, week)
+    if discarded is not None:
+        print(f"      removed {discarded}, which was from an earlier run", file=sys.stderr)
+    failed.append(week)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -914,16 +1034,14 @@ def main(argv: list[str] | None = None) -> int:
         try:
             text = template_readout(facts) if args.dry_run else generate_readout(facts, model=model)
         except (NumberCheckError, llm.ModelError) as exc:
-            print(f"  week {week:>2}: NOT SAVED -- {exc}", file=sys.stderr)
-            failed.append(week)
+            _fail(week, f"{exc}", args.out, failed)
             continue
 
         unsupported = check_numbers(text, facts)
         if unsupported:  # the template is held to the same bar as the model
-            print(f"  week {week:>2}: NOT SAVED -- template used {', '.join(unsupported)}", file=sys.stderr)
-            for line in offending_sentences(text, unsupported, facts):
-                print(f"      {line}", file=sys.stderr)
-            failed.append(week)
+            detail = f"template used {', '.join(unsupported)}"
+            detail += "".join(f"\n      {line}" for line in offending_sentences(text, unsupported, facts))
+            _fail(week, detail, args.out, failed)
             continue
 
         record = readout_record(facts, text, model, args.dry_run)

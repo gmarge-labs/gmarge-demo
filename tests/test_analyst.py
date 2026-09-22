@@ -252,33 +252,120 @@ def test_the_readout_leads_with_what_matters(analysis):
         assert text.index("flagged") < over_claim < driver
 
 
-def test_a_holdout_covering_the_week_is_in_the_facts(analysis):
-    """Only a holdout says what a channel is worth, so the week it covers gets it."""
-    weeks_with_holdouts = 0
+def _end_week(analysis, holdout) -> int:
+    """The week a holdout's window closes in -- the week its result exists."""
+    return _week_of(analysis, holdout.end_date.date().isoformat())
+
+
+def test_no_holdout_result_exists_before_the_test_ends(analysis):
+    """A four-week test has no answer in week two, and the facts must not imply one.
+
+    Anything measured over the window -- lift, incremental ROAS, even the
+    reported ROAS for the window -- is computed from days that have not
+    happened yet in an earlier week's world. Putting one in that week's facts
+    would be hindsight dressed as analysis.
+    """
+    for holdout in analysis.metrics["holdouts"].itertuples():
+        concluded = _end_week(analysis, holdout)
+        for week in analysis.weeks:
+            if week >= concluded:
+                continue
+            holdouts = facts_for(analysis, week)["holdouts"]
+            early = [e for e in holdouts["results"] if e["channel"] == holdout.channel]
+            assert early == [], f"week {week} saw {holdout.channel}'s result early"
+
+            # while it runs, the facts hold its name and its due week, nothing measured
+            for entry in holdouts["running"]:
+                if entry["channel"] == holdout.channel:
+                    assert "incremental_roas" not in _keys(entry)
+                    assert "lift_pct" not in _keys(entry)
+                    assert "reported_roas_in_window" not in _keys(entry)
+
+
+def test_a_week_with_no_concluded_test_claims_no_incremental_roas(analysis):
+    """A week where nothing concluded says nothing about what a channel is worth."""
+    checked = 0
     for week in analysis.weeks:
         facts = facts_for(analysis, week)
-        running = facts["holdouts"]["running"]
-        assert facts["holdouts"]["n_running"]["value"] == len(running)
-
-        for holdout in running:
-            assert holdout["window_start"] <= facts["week"]["week_end"]
-            assert holdout["window_end"] >= facts["week"]["week_start"]
-            assert holdout["incremental_roas"]["display"].endswith("x")
-            assert holdout["reported_roas_in_window"]["display"].endswith("x")
-        if running:
-            weeks_with_holdouts += 1
-            assert running[0]["channel"] in an.template_readout(facts)
-    assert weeks_with_holdouts, "this dataset should have weeks a holdout covers"
+        if facts["holdouts"]["results"]:
+            continue
+        checked += 1
+        assert "incremental_roas" not in _keys(facts["holdouts"])
+        assert "incremental ROAS" not in an.template_readout(facts)
+    assert checked, "this dataset should have weeks where nothing concluded"
 
 
-def test_a_week_no_holdout_covers_claims_no_incremental_roas(analysis):
-    holdouts = analysis.metrics["holdouts"]
-    latest = max(h.date().isoformat() for h in holdouts["end_date"])
-    week = next(w for w in analysis.weeks if facts_for(analysis, w)["week"]["week_start"] > latest)
+def test_the_tiktok_holdout_result_appears_only_once_it_has_concluded(analysis):
+    tiktok = next(h for h in analysis.metrics["holdouts"].itertuples() if h.channel == "TikTok")
+    concluded = _end_week(analysis, tiktok)
+
+    for week in analysis.weeks:
+        holdouts = facts_for(analysis, week)["holdouts"]
+        named = {entry["channel"] for entry in holdouts["results"]}
+        running = {entry["channel"] for entry in holdouts["running"]}
+
+        if week < concluded:
+            assert "TikTok" not in named
+        elif week == concluded:
+            assert "TikTok" in named
+        elif week == concluded + 1:
+            assert "TikTok" in named  # still news, and said to be last week's
+            entry = next(e for e in holdouts["results"] if e["channel"] == "TikTok")
+            assert entry["weeks_since_result"]["value"] == 1
+            assert entry["status"] == "concluded last week"
+        else:
+            assert "TikTok" not in named and "TikTok" not in running
+
+
+def test_a_running_holdout_offers_only_its_due_week(analysis):
+    """While a test runs, the fact available is that it runs and when it lands."""
+    checked = 0
+    for week in analysis.weeks:
+        facts = facts_for(analysis, week)
+        for entry in facts["holdouts"]["running"]:
+            checked += 1
+            assert entry["result_due_in_week"]["value"] > week
+            assert set(entry) == {"channel", "window_start", "window_end", "result_due_in_week", "status"}
+            assert entry["window_start"] <= facts["week"]["week_end"]
+            assert _show(entry["result_due_in_week"]) in an.template_readout(facts)
+    assert checked, "this dataset should have weeks with a test still running"
+
+
+def _show(node):
+    return node["display"]
+
+
+def test_a_concluded_holdout_carries_its_interval(analysis):
+    """The interval is three display strings, so the model never computes a bound."""
+    checked = 0
+    for week in analysis.weeks:
+        for entry in facts_for(analysis, week)["holdouts"]["results"]:
+            checked += 1
+            assert entry["interval_level"]["display"] == "90%"
+            assert entry["interval_low"]["display"].endswith("x")
+            assert entry["interval_high"]["display"].endswith("x")
+            assert entry["interval_low"]["value"] <= entry["incremental_roas"]["value"]
+            assert entry["incremental_roas"]["value"] <= entry["interval_high"]["value"]
+    assert checked, "this dataset should have weeks where a test concluded"
+
+
+def test_the_interval_phrasing_passes_and_the_old_phrasing_is_not_needed(analysis):
+    week = next(w for w in analysis.weeks if facts_for(analysis, w)["holdouts"]["results"])
     facts = facts_for(analysis, week)
+    entry = facts["holdouts"]["results"][0]
 
-    assert facts["holdouts"]["running"] == []
-    assert "incremental ROAS" not in an.template_readout(facts)
+    phrased = (
+        f"incremental ROAS of {entry['incremental_roas']['display']} "
+        f"({entry['interval_level']['display']} interval {entry['interval_low']['display']} "
+        f"to {entry['interval_high']['display']})"
+    )
+    assert an.check_numbers(phrased, facts) == []
+    assert phrased in an.template_readout(facts)
+
+    # the model is steered off "with 90% confidence", which says something else
+    assert "90% interval" in an.SYSTEM
+    assert "with 90% confidence" in an.SYSTEM and "Never write" in an.SYSTEM
+    assert "confidence" not in an.template_readout(facts)
 
 
 # --------------------------------------------------------------------------
@@ -564,3 +651,111 @@ def test_a_share_over_one_hundred_percent_is_kept_out_of_the_prose(analysis):
             checked += 1
             assert share["display"] not in an.template_readout(facts)
     assert checked, "this dataset should have a week whose shares pull against each other"
+
+
+# --------------------------------------------------------------------------
+# 10. Names with digits in them are names, not figures
+# --------------------------------------------------------------------------
+
+
+def test_a_sentence_mentioning_ga4_passes(analysis):
+    """The 4 in GA4 is part of a name. Reading it as a figure failed week 26."""
+    lag = next(f for f in analysis.findings if f.check == "reporting_lag")
+    facts = facts_for(analysis, _week_of(analysis, lag.start_date))
+
+    assert an.check_numbers("Ad spend and GA4 sessions are still filling in.", facts) == []
+    assert an.check_numbers("GA4 is two days short.", facts) == []
+    assert "GA4 sessions" in json.dumps(an.prompt_facts(facts))
+
+
+def test_an_invented_day_count_still_fails_beside_a_name(analysis):
+    """Masking names must not open a door for a figure the facts do not have."""
+    lag = next(f for f in analysis.findings if f.check == "reporting_lag")
+    facts = facts_for(analysis, _week_of(analysis, lag.start_date))
+
+    invented = next(str(n) for n in range(2, 200) if an.check_numbers(f"{n} days reported.", facts))
+    assert an.check_numbers(f"GA4 sessions reported {invented} of the week's days.", facts) == [invented]
+
+
+def test_an_entity_name_is_masked_but_a_display_never_is(analysis):
+    """A display must stay visible to the check, or the check tests nothing."""
+    week = next(a.week for a in analysis.anomalies if any(c.isdigit() for c in a.ad_set))
+    facts = facts_for(analysis, week)
+    names = an._entity_names(an._strings(an.prompt_facts(facts), set()))
+
+    assert "GA4 sessions" not in names or "GA4" in names
+    assert facts["totals"]["shopify_revenue"]["display"] not in names
+    assert not [name for name in names if an.FIGURE.fullmatch(name)]
+
+
+# --------------------------------------------------------------------------
+# 11. A failed week leaves no stale read-out behind
+# --------------------------------------------------------------------------
+
+
+def test_a_failed_week_deletes_the_read_out_it_could_not_replace(monkeypatch, dataset, tmp_path, capsys):
+    """Last run's answer under this week's name is worse than no file at all."""
+    weeks = an.analyse(dataset.path).weeks[-1:]
+    args = ["--weeks", "1", "--data", str(dataset.path), "--out", str(tmp_path)]
+
+    assert an.main([*args, "--dry-run"]) == 0
+    stale = an.readout_path(tmp_path, weeks[0])
+    assert stale.exists()
+
+    monkeypatch.setattr(llm, "complete", lambda *a, **k: "Revenue was $9.9m.")
+    monkeypatch.setattr(llm, "model_id", lambda override=None: "test-model")
+    assert an.main(args) == 1
+
+    assert not stale.exists()
+    assert "removed" in capsys.readouterr().err
+
+
+def test_a_failed_week_with_no_previous_file_says_nothing_about_removing_one(monkeypatch, dataset, tmp_path, capsys):
+    monkeypatch.setattr(llm, "complete", lambda *a, **k: "Revenue was $9.9m.")
+    monkeypatch.setattr(llm, "model_id", lambda override=None: "test-model")
+
+    assert an.main(["--weeks", "1", "--data", str(dataset.path), "--out", str(tmp_path)]) == 1
+    assert "removed" not in capsys.readouterr().err
+    assert list(tmp_path.glob("week-*.json")) == []
+
+
+def test_a_read_out_is_replaced_only_once_it_is_whole(dataset, tmp_path, capsys):
+    """The file is written beside its name and moved onto it, never over it."""
+    args = ["--weeks", "1", "--data", str(dataset.path), "--out", str(tmp_path), "--dry-run"]
+    an.main(args)
+    an.main(args)
+    capsys.readouterr()
+
+    assert len(list(tmp_path.glob("week-*.json"))) == 1
+    assert list(tmp_path.glob("*.partial")) == []
+
+
+def test_discarding_a_read_out_that_is_not_there_is_not_an_error(tmp_path):
+    assert an.discard_readout(tmp_path, 26) is None
+
+
+# --------------------------------------------------------------------------
+# 12. Week 20 leads with the flag the anomaly agent raised
+# --------------------------------------------------------------------------
+
+
+def test_week_20_leads_with_the_frequency_flag(analysis):
+    """The planted week-20 fault is a frequency spike in one ad set. It leads."""
+    facts = facts_for(analysis, 20)
+    flag = next(f for f in facts["anomalies"]["flags"] if f["metric"] == "frequency")
+
+    assert flag["channel"] == "Meta prospecting"
+    assert flag["ad_set"] == "Core | Broad 25-44"
+    assert flag["direction"] == "up"
+
+    text = an.template_readout(facts)
+    lead = text.split(". ")[1]  # after the "Week 20 (dates), brand." header
+    assert "flagged" in lead
+    assert flag["channel"] in lead and flag["metric_label"] in lead
+    assert flag["ad_set"] in lead
+    assert flag["pct_change"]["display"] in lead
+
+    assert "normal" not in text.lower()
+    assert "every metric" not in text.lower()
+    assert "nothing was flagged" not in text.lower()
+    assert an.check_numbers(text, facts) == []

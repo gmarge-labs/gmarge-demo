@@ -6,10 +6,10 @@
   "disclaimer": "Synthetic sample data for a fictional brand. Not a real company, not real revenue, not any real advertiser's performance.",
   "mode": "model",
   "model": "claude-haiku-4-5",
-  "generated_at": "2026-09-22T15:19:32+00:00",
-  "word_count": 71,
+  "generated_at": "2026-09-22T16:32:03+00:00",
+  "word_count": 94,
   "word_limit": 120,
-  "text": "Store revenue was up $6.9k to $552.9k. Platform-attributed revenue rose $37.9k, though the over-claim ratio increased to 1.50x, meaning platforms claimed $276.7k more revenue than the store recorded. TikTok drove the week's growth, contributing $31.8k of the $37.9k rise in platform-attributed revenue and $7.5k of the $8.6k increase in ad spend. A TikTok holdout concluded last week showed incremental ROAS of 1.50x (90% interval 1.35x to 1.65x) over its four-week window.",
+  "text": "Week 25 saw store revenue up $6.9k to $552.9k, with ad spend rising $8.6k to $159.0k. TikTok drove the week's growth, accounting for 84.0% of the $37.9k increase in platform-attributed revenue and 87.2% of ad spend growth. Platform-attributed revenue reached $829.6k against store revenue of $552.9k, yielding an over-claim ratio of 1.50x\u2014meaning the platforms between them claimed $276.7k more revenue than the store took. No anomalies were flagged. A TikTok holdout concluded last week showed an incremental ROAS of 1.50x (90% interval 1.35x to 1.65x), well below the platform's reported 4.20x for that window.",
   "facts": {
     "brand": "Northfield Goods (sample brand)",
     "disclaimer": "Synthetic sample data for a fictional brand. Not a real company, not real revenue, not any real advertiser's performance.",
@@ -71,6 +71,7 @@
       "channel_figures_still_filling_in": false,
       "affected": []
     },
+    "provisional": null,
     "quality_findings": [],
     "over_claim": {
       "ratio": {
@@ -89,7 +90,6 @@
         "value": 552934.79,
         "display": "$552.9k"
       },
-      "still_filling_in": false,
       "meaning": "The platforms between them claimed this much more revenue than the store took. A ratio above 1.00x is the same order credited more than once."
     },
     "totals": {
@@ -133,8 +133,7 @@
           "value": 0.0126,
           "display": "1.3%"
         },
-        "direction": "up",
-        "still_filling_in": false
+        "direction": "up"
       },
       "shopify_net_revenue": {
         "label": "net store revenue",
@@ -146,8 +145,7 @@
           "value": 0.016,
           "display": "1.6%"
         },
-        "direction": "up",
-        "still_filling_in": false
+        "direction": "up"
       },
       "ad_spend": {
         "label": "ad spend",
@@ -159,8 +157,7 @@
           "value": 0.0574,
           "display": "5.7%"
         },
-        "direction": "up",
-        "still_filling_in": false
+        "direction": "up"
       },
       "platform_attributed_revenue": {
         "label": "platform-attributed revenue",
@@ -172,8 +169,7 @@
           "value": 0.0478,
           "display": "4.8%"
         },
-        "direction": "up",
-        "still_filling_in": false
+        "direction": "up"
       },
       "over_claimed_revenue": {
         "label": "over-claimed revenue",
@@ -185,34 +181,25 @@
           "value": 0.1261,
           "display": "12.6%"
         },
-        "direction": "up",
-        "still_filling_in": false
+        "direction": "up"
       },
       "over_claim_ratio": {
         "label": "over-claim ratio",
-        "absolute": {
-          "value": 0.0504,
-          "display": "0.05x"
-        },
+        "absolute": null,
         "pct": {
           "value": 0.0348,
           "display": "3.5%"
         },
-        "direction": "up",
-        "still_filling_in": false
+        "direction": "up"
       },
       "blended_reported_roas": {
         "label": "blended reported ROAS",
-        "absolute": {
-          "value": -0.0475,
-          "display": "0.05x"
-        },
+        "absolute": null,
         "pct": {
           "value": -0.009,
           "display": "0.9%"
         },
-        "direction": "down",
-        "still_filling_in": false
+        "direction": "down"
       }
     },
     "channels": [
@@ -350,7 +337,6 @@
           "display": "$8.6k"
         },
         "direction": "up",
-        "still_filling_in": false,
         "channels": [
           {
             "channel": "TikTok",
@@ -433,7 +419,6 @@
           "display": "$37.9k"
         },
         "direction": "up",
-        "still_filling_in": false,
         "channels": [
           {
             "channel": "TikTok",

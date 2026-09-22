@@ -6,10 +6,10 @@
   "disclaimer": "Synthetic sample data for a fictional brand. Not a real company, not real revenue, not any real advertiser's performance.",
   "mode": "model",
   "model": "claude-haiku-4-5",
-  "generated_at": "2026-09-22T15:19:18+00:00",
-  "word_count": 74,
+  "generated_at": "2026-09-22T16:31:47+00:00",
+  "word_count": 69,
   "word_limit": 120,
-  "text": "Week 19 saw store revenue down $14.9k to $496.8k as ad spend rose $3.9k to $141.0k. Platform-attributed revenue climbed $13.4k to $732.2k, but the over-claim ratio widened to 1.47x, meaning platforms claimed $235.5k more revenue than the store actually took. Meta retargeting drove most of the week's platform-attributed revenue gain with $10.4k, while also accounting for 49.6% of the spend increase. A Google shopping holdout is running and results are due in week 20.",
+  "text": "Store revenue fell $14.9k to $496.8k this week, while ad spend rose $3.9k to $141.0k. The over-claim ratio widened to 1.47x, meaning platforms claimed $235.5k more revenue than the store actually took. Meta retargeting drove most of the week's change, accounting for 49.6% of the ad spend increase and 77.2% of the rise in platform-attributed revenue. A Google shopping holdout is running and results are due in week 20.",
   "facts": {
     "brand": "Northfield Goods (sample brand)",
     "disclaimer": "Synthetic sample data for a fictional brand. Not a real company, not real revenue, not any real advertiser's performance.",
@@ -71,6 +71,7 @@
       "channel_figures_still_filling_in": false,
       "affected": []
     },
+    "provisional": null,
     "quality_findings": [],
     "over_claim": {
       "ratio": {
@@ -89,7 +90,6 @@
         "value": 496768.43,
         "display": "$496.8k"
       },
-      "still_filling_in": false,
       "meaning": "The platforms between them claimed this much more revenue than the store took. A ratio above 1.00x is the same order credited more than once."
     },
     "totals": {
@@ -133,8 +133,7 @@
           "value": -0.0292,
           "display": "2.9%"
         },
-        "direction": "down",
-        "still_filling_in": false
+        "direction": "down"
       },
       "shopify_net_revenue": {
         "label": "net store revenue",
@@ -146,8 +145,7 @@
           "value": -0.0324,
           "display": "3.2%"
         },
-        "direction": "down",
-        "still_filling_in": false
+        "direction": "down"
       },
       "ad_spend": {
         "label": "ad spend",
@@ -159,8 +157,7 @@
           "value": 0.0283,
           "display": "2.8%"
         },
-        "direction": "up",
-        "still_filling_in": false
+        "direction": "up"
       },
       "platform_attributed_revenue": {
         "label": "platform-attributed revenue",
@@ -172,8 +169,7 @@
           "value": 0.0187,
           "display": "1.9%"
         },
-        "direction": "up",
-        "still_filling_in": false
+        "direction": "up"
       },
       "over_claimed_revenue": {
         "label": "over-claimed revenue",
@@ -185,34 +181,25 @@
           "value": 0.1369,
           "display": "13.7%"
         },
-        "direction": "up",
-        "still_filling_in": false
+        "direction": "up"
       },
       "over_claim_ratio": {
         "label": "over-claim ratio",
-        "absolute": {
-          "value": 0.0693,
-          "display": "0.07x"
-        },
+        "absolute": null,
         "pct": {
           "value": 0.0493,
           "display": "4.9%"
         },
-        "direction": "up",
-        "still_filling_in": false
+        "direction": "up"
       },
       "blended_reported_roas": {
         "label": "blended reported ROAS",
-        "absolute": {
-          "value": -0.0488,
-          "display": "0.05x"
-        },
+        "absolute": null,
         "pct": {
           "value": -0.0093,
           "display": "0.9%"
         },
-        "direction": "down",
-        "still_filling_in": false
+        "direction": "down"
       }
     },
     "channels": [
@@ -350,7 +337,6 @@
           "display": "$3.9k"
         },
         "direction": "up",
-        "still_filling_in": false,
         "channels": [
           {
             "channel": "Meta retargeting",
@@ -433,7 +419,6 @@
           "display": "$13.4k"
         },
         "direction": "up",
-        "still_filling_in": false,
         "channels": [
           {
             "channel": "Meta retargeting",

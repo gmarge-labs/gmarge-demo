@@ -1,0 +1,624 @@
+{
+  "week": 20,
+  "week_start": "2025-05-19",
+  "week_end": "2025-05-25",
+  "brand": "Northfield Goods (sample brand)",
+  "disclaimer": "Synthetic sample data for a fictional brand. Not a real company, not real revenue, not any real advertiser's performance.",
+  "mode": "model",
+  "model": "claude-haiku-4-5",
+  "generated_at": "2026-09-22T16:31:50+00:00",
+  "word_count": 91,
+  "word_limit": 120,
+  "text": "Meta prospecting flagged two anomalies this week: average frequency rose to 2.88, up 39.2% from the trailing eight-week median of 2.07, driven almost entirely by the Core Prospecting campaign's Core | Broad 25-44 ad set; and reported ROAS fell to 2.84x, down 18.8% from 3.50x. Meta prospecting dominated the week's platform-attributed revenue decline of $11.4k, dropping $32.5k while other channels gained ground. The over-claim ratio narrowed to 1.42x, with over-claimed revenue down $21.9k. A Google Shopping holdout concluded this week with an incremental ROAS of 1.99x (90% interval 1.89x to 2.11x).",
+  "facts": {
+    "brand": "Northfield Goods (sample brand)",
+    "disclaimer": "Synthetic sample data for a fictional brand. Not a real company, not real revenue, not any real advertiser's performance.",
+    "week": {
+      "number": {
+        "value": 20.0,
+        "display": "20"
+      },
+      "week_start": "2025-05-19",
+      "week_end": "2025-05-25",
+      "days": {
+        "value": 7.0,
+        "display": "7"
+      }
+    },
+    "prior_week": {
+      "number": {
+        "value": 19.0,
+        "display": "19"
+      },
+      "week_start": "2025-05-12",
+      "week_end": "2025-05-18"
+    },
+    "data_window": {
+      "start": "2025-01-06",
+      "end": "2025-07-06",
+      "n_weeks": {
+        "value": 26.0,
+        "display": "26"
+      }
+    },
+    "anomalies": {
+      "n_flags": {
+        "value": 2.0,
+        "display": "2"
+      },
+      "flags": [
+        {
+          "channel": "Meta prospecting",
+          "metric": "frequency",
+          "metric_label": "average frequency",
+          "direction": "up",
+          "severity": "high",
+          "value": {
+            "value": 2.8801,
+            "display": "2.88"
+          },
+          "trailing_median": {
+            "value": 2.0689,
+            "display": "2.07"
+          },
+          "trailing_weeks": {
+            "value": 8.0,
+            "display": "8"
+          },
+          "pct_change": {
+            "value": 0.3921,
+            "display": "39.2%"
+          },
+          "campaign": "MP - Core Prospecting",
+          "ad_set": "Core | Broad 25-44",
+          "share_of_move": {
+            "value": 0.9541,
+            "display": "95.4%"
+          },
+          "description": "Meta prospecting's average frequency rose 39.2% in week 20 (2025-05-19 to 2025-05-25), to 2.88 from a trailing 8-week median of 2.07. That is a robust score of +23.5: the trailing weeks themselves sit a typical 1.1% from their median. Most of the move is one ad set: Core | Broad 25-44 (campaign MP - Core Prospecting) accounts for 95% of the move, its own average frequency going from 2.07 to 4.36."
+        },
+        {
+          "channel": "Meta prospecting",
+          "metric": "reported_roas",
+          "metric_label": "reported ROAS",
+          "direction": "down",
+          "severity": "medium",
+          "value": {
+            "value": 2.8394,
+            "display": "2.84x"
+          },
+          "trailing_median": {
+            "value": 3.4985,
+            "display": "3.50x"
+          },
+          "trailing_weeks": {
+            "value": 8.0,
+            "display": "8"
+          },
+          "pct_change": {
+            "value": -0.1884,
+            "display": "18.8%"
+          },
+          "campaign": "MP - Core Prospecting",
+          "ad_set": "Core | Broad 25-44",
+          "share_of_move": {
+            "value": 1.001,
+            "display": "100.1%"
+          },
+          "description": "Meta prospecting's reported ROAS fell 18.8% in week 20 (2025-05-19 to 2025-05-25), to 2.84 from a trailing 8-week median of 3.50. That is a robust score of -25.4: the trailing weeks themselves sit a typical 0.5% from their median. Most of the move is one ad set: Core | Broad 25-44 (campaign MP - Core Prospecting) accounts for 100% of the move, its own reported ROAS going from 3.48 to 1.55."
+        }
+      ],
+      "source": "the weekly anomaly scan in gmarge/anomalies.py"
+    },
+    "completeness": {
+      "complete": true,
+      "days_in_week": {
+        "value": 7.0,
+        "display": "7"
+      },
+      "days_affected": {
+        "value": 0.0,
+        "display": "0"
+      },
+      "days_with_complete_data": {
+        "value": 7.0,
+        "display": "7"
+      },
+      "affected_dates": [],
+      "affected_sources": [],
+      "affected_source_labels": [],
+      "totals_still_filling_in": [],
+      "totals_still_filling_in_labels": [],
+      "channel_figures_still_filling_in": false,
+      "affected": []
+    },
+    "provisional": null,
+    "quality_findings": [],
+    "over_claim": {
+      "ratio": {
+        "value": 1.421,
+        "display": "1.42x"
+      },
+      "over_claimed_revenue": {
+        "value": 213547.16,
+        "display": "$213.5k"
+      },
+      "platform_attributed_revenue": {
+        "value": 720821.75,
+        "display": "$720.8k"
+      },
+      "shopify_revenue": {
+        "value": 507274.59,
+        "display": "$507.3k"
+      },
+      "meaning": "The platforms between them claimed this much more revenue than the store took. A ratio above 1.00x is the same order credited more than once."
+    },
+    "totals": {
+      "shopify_revenue": {
+        "value": 507274.59,
+        "display": "$507.3k"
+      },
+      "shopify_net_revenue": {
+        "value": 476798.3,
+        "display": "$476.8k"
+      },
+      "ad_spend": {
+        "value": 141961.54,
+        "display": "$142.0k"
+      },
+      "platform_attributed_revenue": {
+        "value": 720821.75,
+        "display": "$720.8k"
+      },
+      "over_claimed_revenue": {
+        "value": 213547.16,
+        "display": "$213.5k"
+      },
+      "over_claim_ratio": {
+        "value": 1.421,
+        "display": "1.42x"
+      },
+      "blended_reported_roas": {
+        "value": 5.0776,
+        "display": "5.08x"
+      }
+    },
+    "change_vs_prior_week": {
+      "shopify_revenue": {
+        "label": "store revenue",
+        "absolute": {
+          "value": 10506.16,
+          "display": "$10.5k"
+        },
+        "pct": {
+          "value": 0.0211,
+          "display": "2.1%"
+        },
+        "direction": "up"
+      },
+      "shopify_net_revenue": {
+        "label": "net store revenue",
+        "absolute": {
+          "value": 9113.93,
+          "display": "$9.1k"
+        },
+        "pct": {
+          "value": 0.0195,
+          "display": "1.9%"
+        },
+        "direction": "up"
+      },
+      "ad_spend": {
+        "label": "ad spend",
+        "absolute": {
+          "value": 986.14,
+          "display": "$986"
+        },
+        "pct": {
+          "value": 0.007,
+          "display": "0.7%"
+        },
+        "direction": "up"
+      },
+      "platform_attributed_revenue": {
+        "label": "platform-attributed revenue",
+        "absolute": {
+          "value": -11399.47,
+          "display": "$11.4k"
+        },
+        "pct": {
+          "value": -0.0156,
+          "display": "1.6%"
+        },
+        "direction": "down"
+      },
+      "over_claimed_revenue": {
+        "label": "over-claimed revenue",
+        "absolute": {
+          "value": -21905.63,
+          "display": "$21.9k"
+        },
+        "pct": {
+          "value": -0.093,
+          "display": "9.3%"
+        },
+        "direction": "down"
+      },
+      "over_claim_ratio": {
+        "label": "over-claim ratio",
+        "absolute": null,
+        "pct": {
+          "value": -0.036,
+          "display": "3.6%"
+        },
+        "direction": "down"
+      },
+      "blended_reported_roas": {
+        "label": "blended reported ROAS",
+        "absolute": null,
+        "pct": {
+          "value": -0.0224,
+          "display": "2.2%"
+        },
+        "direction": "down"
+      }
+    },
+    "channels": [
+      {
+        "channel": "Meta prospecting",
+        "spend": {
+          "value": 40010.81,
+          "display": "$40.0k"
+        },
+        "platform_attributed_revenue": {
+          "value": 113605.08,
+          "display": "$113.6k"
+        },
+        "reported_roas": {
+          "value": 2.8394,
+          "display": "2.84x"
+        },
+        "ad_spend_change": {
+          "value": -1516.5,
+          "display": "$1.5k"
+        },
+        "ad_spend_direction": "down",
+        "platform_attributed_revenue_change": {
+          "value": -32515.12,
+          "display": "$32.5k"
+        },
+        "platform_attributed_revenue_direction": "down"
+      },
+      {
+        "channel": "Google shopping",
+        "spend": {
+          "value": 31508.0,
+          "display": "$31.5k"
+        },
+        "platform_attributed_revenue": {
+          "value": 157576.12,
+          "display": "$157.6k"
+        },
+        "reported_roas": {
+          "value": 5.0011,
+          "display": "5.00x"
+        },
+        "ad_spend_change": {
+          "value": 1255.8,
+          "display": "$1.3k"
+        },
+        "ad_spend_direction": "up",
+        "platform_attributed_revenue_change": {
+          "value": 6824.95,
+          "display": "$6.8k"
+        },
+        "platform_attributed_revenue_direction": "up"
+      },
+      {
+        "channel": "Google branded search",
+        "spend": {
+          "value": 25695.19,
+          "display": "$25.7k"
+        },
+        "platform_attributed_revenue": {
+          "value": 203977.63,
+          "display": "$204.0k"
+        },
+        "reported_roas": {
+          "value": 7.9384,
+          "display": "7.94x"
+        },
+        "ad_spend_change": {
+          "value": 964.71,
+          "display": "$965"
+        },
+        "ad_spend_direction": "up",
+        "platform_attributed_revenue_change": {
+          "value": 8634.93,
+          "display": "$8.6k"
+        },
+        "platform_attributed_revenue_direction": "up"
+      },
+      {
+        "channel": "TikTok",
+        "spend": {
+          "value": 24214.83,
+          "display": "$24.2k"
+        },
+        "platform_attributed_revenue": {
+          "value": 102845.35,
+          "display": "$102.8k"
+        },
+        "reported_roas": {
+          "value": 4.2472,
+          "display": "4.25x"
+        },
+        "ad_spend_change": {
+          "value": 116.0,
+          "display": "$116"
+        },
+        "ad_spend_direction": "up",
+        "platform_attributed_revenue_change": {
+          "value": 3273.87,
+          "display": "$3.3k"
+        },
+        "platform_attributed_revenue_direction": "up"
+      },
+      {
+        "channel": "Meta retargeting",
+        "spend": {
+          "value": 20532.71,
+          "display": "$20.5k"
+        },
+        "platform_attributed_revenue": {
+          "value": 142817.57,
+          "display": "$142.8k"
+        },
+        "reported_roas": {
+          "value": 6.9556,
+          "display": "6.96x"
+        },
+        "ad_spend_change": {
+          "value": 166.13,
+          "display": "$166"
+        },
+        "ad_spend_direction": "up",
+        "platform_attributed_revenue_change": {
+          "value": 2381.9,
+          "display": "$2.4k"
+        },
+        "platform_attributed_revenue_direction": "up"
+      }
+    ],
+    "drivers": {
+      "ad_spend": {
+        "label": "ad spend",
+        "total_change": {
+          "value": 986.14,
+          "display": "$986"
+        },
+        "direction": "up",
+        "channels": [
+          {
+            "channel": "Meta prospecting",
+            "change": {
+              "value": -1516.5,
+              "display": "$1.5k"
+            },
+            "direction": "down",
+            "share_of_change": {
+              "value": -1.5378,
+              "display": "153.8%"
+            }
+          },
+          {
+            "channel": "Google shopping",
+            "change": {
+              "value": 1255.8,
+              "display": "$1.3k"
+            },
+            "direction": "up",
+            "share_of_change": {
+              "value": 1.2735,
+              "display": "127.3%"
+            }
+          },
+          {
+            "channel": "Google branded search",
+            "change": {
+              "value": 964.71,
+              "display": "$965"
+            },
+            "direction": "up",
+            "share_of_change": {
+              "value": 0.9783,
+              "display": "97.8%"
+            }
+          },
+          {
+            "channel": "Meta retargeting",
+            "change": {
+              "value": 166.13,
+              "display": "$166"
+            },
+            "direction": "up",
+            "share_of_change": {
+              "value": 0.1685,
+              "display": "16.8%"
+            }
+          },
+          {
+            "channel": "TikTok",
+            "change": {
+              "value": 116.0,
+              "display": "$116"
+            },
+            "direction": "up",
+            "share_of_change": {
+              "value": 0.1176,
+              "display": "11.8%"
+            }
+          }
+        ],
+        "largest": {
+          "channel": "Meta prospecting",
+          "change": {
+            "value": -1516.5,
+            "display": "$1.5k"
+          },
+          "direction": "down",
+          "share_of_change": {
+            "value": -1.5378,
+            "display": "153.8%"
+          }
+        }
+      },
+      "platform_attributed_revenue": {
+        "label": "platform-attributed revenue",
+        "total_change": {
+          "value": -11399.47,
+          "display": "$11.4k"
+        },
+        "direction": "down",
+        "channels": [
+          {
+            "channel": "Meta prospecting",
+            "change": {
+              "value": -32515.12,
+              "display": "$32.5k"
+            },
+            "direction": "down",
+            "share_of_change": {
+              "value": 2.8523,
+              "display": "285.2%"
+            }
+          },
+          {
+            "channel": "Google branded search",
+            "change": {
+              "value": 8634.93,
+              "display": "$8.6k"
+            },
+            "direction": "up",
+            "share_of_change": {
+              "value": -0.7575,
+              "display": "75.7%"
+            }
+          },
+          {
+            "channel": "Google shopping",
+            "change": {
+              "value": 6824.95,
+              "display": "$6.8k"
+            },
+            "direction": "up",
+            "share_of_change": {
+              "value": -0.5987,
+              "display": "59.9%"
+            }
+          },
+          {
+            "channel": "TikTok",
+            "change": {
+              "value": 3273.87,
+              "display": "$3.3k"
+            },
+            "direction": "up",
+            "share_of_change": {
+              "value": -0.2872,
+              "display": "28.7%"
+            }
+          },
+          {
+            "channel": "Meta retargeting",
+            "change": {
+              "value": 2381.9,
+              "display": "$2.4k"
+            },
+            "direction": "up",
+            "share_of_change": {
+              "value": -0.2089,
+              "display": "20.9%"
+            }
+          }
+        ],
+        "largest": {
+          "channel": "Meta prospecting",
+          "change": {
+            "value": -32515.12,
+            "display": "$32.5k"
+          },
+          "direction": "down",
+          "share_of_change": {
+            "value": 2.8523,
+            "display": "285.2%"
+          }
+        }
+      }
+    },
+    "holdouts": {
+      "n_running": {
+        "value": 0.0,
+        "display": "0"
+      },
+      "running": [],
+      "n_with_results": {
+        "value": 1.0,
+        "display": "1"
+      },
+      "results": [
+        {
+          "channel": "Google shopping",
+          "window_start": "2025-04-28",
+          "window_end": "2025-05-25",
+          "concluded_in_week": {
+            "value": 20.0,
+            "display": "20"
+          },
+          "weeks_since_result": {
+            "value": 0.0,
+            "display": "0"
+          },
+          "status": "concluded this week",
+          "incremental_roas": {
+            "value": 1.9921,
+            "display": "1.99x"
+          },
+          "interval_level": {
+            "value": 0.9,
+            "display": "90%"
+          },
+          "interval_low": {
+            "value": 1.8921,
+            "display": "1.89x"
+          },
+          "interval_high": {
+            "value": 2.1054,
+            "display": "2.11x"
+          },
+          "reported_roas_in_window": {
+            "value": 4.9606,
+            "display": "4.96x"
+          },
+          "over_claim_multiple": {
+            "value": 2.4902,
+            "display": "2.49x"
+          },
+          "lift_pct": {
+            "value": 0.1419,
+            "display": "14.2%"
+          },
+          "paused_spend_estimate": {
+            "value": 29520.06,
+            "display": "$29.5k"
+          }
+        }
+      ],
+      "note": "A result is measured over the whole holdout window, not this week alone, and only exists once the window has closed. Incremental ROAS is what the channel is worth; reported ROAS is what the platform claims. Write an interval as 1.99x (90% interval 1.89x to 2.11x)."
+    },
+    "notes": [
+      "Store revenue cannot be split by channel; platform-attributed revenue is not store revenue.",
+      "Reported ROAS is what the platforms claim. Only a holdout says what a channel is worth."
+    ]
+  }
+}

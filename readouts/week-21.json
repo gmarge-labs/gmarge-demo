@@ -6,10 +6,10 @@
   "disclaimer": "Synthetic sample data for a fictional brand. Not a real company, not real revenue, not any real advertiser's performance.",
   "mode": "model",
   "model": "claude-haiku-4-5",
-  "generated_at": "2026-09-22T15:19:24+00:00",
-  "word_count": 64,
+  "generated_at": "2026-09-22T16:31:52+00:00",
+  "word_count": 87,
   "word_limit": 120,
-  "text": "Store revenue rose $24.4k to $531.6k. The platforms claimed 1.37x the store's actual take, with over-claimed revenue down $15.0k week-on-week. Meta prospecting drove the week's platform-attributed revenue gains, up $35.3k, while TikTok spend fell $7.3k. A Google shopping holdout concluded last week with incremental ROAS of 1.99x (90% interval 1.89x to 2.11x), and a TikTok test is running with results due in week 24.",
+  "text": "Store revenue rose $24.4k to $531.6k this week, with no flags from the anomaly scan. Platform-attributed revenue climbed $9.4k, though the over-claim ratio edged down to 1.37x, meaning the platforms between them claimed $198.6k more revenue than the store took. Meta prospecting drove most of the week's change, with platform-attributed revenue up $35.3k, while TikTok spend fell $7.3k. A Google Shopping holdout concluded last week with incremental ROAS of 1.99x (90% interval 1.89x to 2.11x), and a TikTok test is running with results due in week 24.",
   "facts": {
     "brand": "Northfield Goods (sample brand)",
     "disclaimer": "Synthetic sample data for a fictional brand. Not a real company, not real revenue, not any real advertiser's performance.",
@@ -71,6 +71,7 @@
       "channel_figures_still_filling_in": false,
       "affected": []
     },
+    "provisional": null,
     "quality_findings": [],
     "over_claim": {
       "ratio": {
@@ -89,7 +90,6 @@
         "value": 531637.44,
         "display": "$531.6k"
       },
-      "still_filling_in": false,
       "meaning": "The platforms between them claimed this much more revenue than the store took. A ratio above 1.00x is the same order credited more than once."
     },
     "totals": {
@@ -133,8 +133,7 @@
           "value": 0.048,
           "display": "4.8%"
         },
-        "direction": "up",
-        "still_filling_in": false
+        "direction": "up"
       },
       "shopify_net_revenue": {
         "label": "net store revenue",
@@ -146,8 +145,7 @@
           "value": 0.0513,
           "display": "5.1%"
         },
-        "direction": "up",
-        "still_filling_in": false
+        "direction": "up"
       },
       "ad_spend": {
         "label": "ad spend",
@@ -159,8 +157,7 @@
           "value": -0.0212,
           "display": "2.1%"
         },
-        "direction": "down",
-        "still_filling_in": false
+        "direction": "down"
       },
       "platform_attributed_revenue": {
         "label": "platform-attributed revenue",
@@ -172,8 +169,7 @@
           "value": 0.0131,
           "display": "1.3%"
         },
-        "direction": "up",
-        "still_filling_in": false
+        "direction": "up"
       },
       "over_claimed_revenue": {
         "label": "over-claimed revenue",
@@ -185,34 +181,25 @@
           "value": -0.07,
           "display": "7.0%"
         },
-        "direction": "down",
-        "still_filling_in": false
+        "direction": "down"
       },
       "over_claim_ratio": {
         "label": "over-claim ratio",
-        "absolute": {
-          "value": -0.0474,
-          "display": "0.05x"
-        },
+        "absolute": null,
         "pct": {
           "value": -0.0334,
           "display": "3.3%"
         },
-        "direction": "down",
-        "still_filling_in": false
+        "direction": "down"
       },
       "blended_reported_roas": {
         "label": "blended reported ROAS",
-        "absolute": {
-          "value": 0.1777,
-          "display": "0.18x"
-        },
+        "absolute": null,
         "pct": {
           "value": 0.035,
           "display": "3.5%"
         },
-        "direction": "up",
-        "still_filling_in": false
+        "direction": "up"
       }
     },
     "channels": [
@@ -350,7 +337,6 @@
           "display": "$3.0k"
         },
         "direction": "down",
-        "still_filling_in": false,
         "channels": [
           {
             "channel": "TikTok",
@@ -433,7 +419,6 @@
           "display": "$9.4k"
         },
         "direction": "up",
-        "still_filling_in": false,
         "channels": [
           {
             "channel": "Meta prospecting",

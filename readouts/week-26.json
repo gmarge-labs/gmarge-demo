@@ -1,0 +1,244 @@
+{
+  "week": 26,
+  "week_start": "2025-06-30",
+  "week_end": "2025-07-06",
+  "brand": "Northfield Goods (sample brand)",
+  "disclaimer": "Synthetic sample data for a fictional brand. Not a real company, not real revenue, not any real advertiser's performance.",
+  "mode": "model",
+  "model": "claude-haiku-4-5",
+  "generated_at": "2026-09-22T16:32:05+00:00",
+  "word_count": 64,
+  "word_limit": 120,
+  "text": "Week 26 data is incomplete: ad spend and GA4 sessions are still filling in for 2 days in the week (2025-07-05 and 2025-07-06). Because of this reporting lag, ad spend, platform-attributed revenue, over-claimed revenue, over-claim ratio and blended reported ROAS are provisional until 2025-07-06 and cannot be reported. Store revenue rose $10.5k week-on-week to $563.5k, and net store revenue was up $6.8k to $528.9k.",
+  "facts": {
+    "brand": "Northfield Goods (sample brand)",
+    "disclaimer": "Synthetic sample data for a fictional brand. Not a real company, not real revenue, not any real advertiser's performance.",
+    "week": {
+      "number": {
+        "value": 26.0,
+        "display": "26"
+      },
+      "week_start": "2025-06-30",
+      "week_end": "2025-07-06",
+      "days": {
+        "value": 7.0,
+        "display": "7"
+      }
+    },
+    "prior_week": {
+      "number": {
+        "value": 25.0,
+        "display": "25"
+      },
+      "week_start": "2025-06-23",
+      "week_end": "2025-06-29"
+    },
+    "data_window": {
+      "start": "2025-01-06",
+      "end": "2025-07-06",
+      "n_weeks": {
+        "value": 26.0,
+        "display": "26"
+      }
+    },
+    "anomalies": {
+      "n_flags": {
+        "value": 0.0,
+        "display": "0"
+      },
+      "flags": [],
+      "source": "the weekly anomaly scan in gmarge/anomalies.py"
+    },
+    "completeness": {
+      "complete": false,
+      "days_in_week": {
+        "value": 7.0,
+        "display": "7"
+      },
+      "days_affected": {
+        "value": 2.0,
+        "display": "2"
+      },
+      "days_with_complete_data": {
+        "value": 5.0,
+        "display": "5"
+      },
+      "affected_dates": [
+        "2025-07-05",
+        "2025-07-06"
+      ],
+      "affected_sources": [
+        "ad_spend",
+        "ga4_sessions"
+      ],
+      "affected_source_labels": [
+        "ad spend",
+        "GA4 sessions"
+      ],
+      "totals_still_filling_in": [
+        "ad_spend",
+        "platform_attributed_revenue",
+        "over_claimed_revenue",
+        "over_claim_ratio",
+        "blended_reported_roas"
+      ],
+      "totals_still_filling_in_labels": [
+        "ad spend",
+        "platform-attributed revenue",
+        "over-claimed revenue",
+        "over-claim ratio",
+        "blended reported ROAS"
+      ],
+      "channel_figures_still_filling_in": true,
+      "affected": [
+        {
+          "source": "ad_spend",
+          "source_label": "ad spend",
+          "check": "reporting_lag",
+          "label": "still filling in",
+          "start_date": "2025-07-05",
+          "end_date": "2025-07-06",
+          "n_days_in_week": {
+            "value": 2.0,
+            "display": "2"
+          },
+          "dates_in_week": [
+            "2025-07-05",
+            "2025-07-06"
+          ]
+        },
+        {
+          "source": "ga4_sessions",
+          "source_label": "GA4 sessions",
+          "check": "reporting_lag",
+          "label": "still filling in",
+          "start_date": "2025-07-05",
+          "end_date": "2025-07-06",
+          "n_days_in_week": {
+            "value": 2.0,
+            "display": "2"
+          },
+          "dates_in_week": [
+            "2025-07-05",
+            "2025-07-06"
+          ]
+        }
+      ]
+    },
+    "provisional": {
+      "provisional_until": "2025-07-06",
+      "sources": [
+        "ad spend",
+        "GA4 sessions"
+      ],
+      "metrics": [
+        "ad_spend",
+        "platform_attributed_revenue",
+        "over_claimed_revenue",
+        "over_claim_ratio",
+        "blended_reported_roas"
+      ],
+      "metric_labels": [
+        "ad spend",
+        "platform-attributed revenue",
+        "over-claimed revenue",
+        "over-claim ratio",
+        "blended reported ROAS"
+      ],
+      "channel_figures_withheld": true,
+      "note": "ad spend, platform-attributed revenue, over-claimed revenue, over-claim ratio and blended reported ROAS are provisional until 2025-07-06: the days behind them are still filling in. No total, week-on-week change, ratio or channel comparison is computed for them and none appears in these FACTS, because a move measured across a lagging table is the lag, not a result. Do not describe, infer or explain one."
+    },
+    "quality_findings": [
+      {
+        "check": "reporting_lag",
+        "label": "still filling in",
+        "severity": "medium",
+        "source": "ad_spend",
+        "start_date": "2025-07-05",
+        "end_date": "2025-07-06",
+        "dates_in_week": [
+          "2025-07-05",
+          "2025-07-06"
+        ],
+        "n_days_in_week": {
+          "value": 2.0,
+          "display": "2"
+        },
+        "description": "ad_spend is still filling in over the last 2 days of the window, 2025-07-05 to 2025-07-06: the spend total stands at 82% on 2025-07-05 and 45% on 2025-07-06, against what the same weekday in the previous 4 weeks implies -- about $15,736 short of settled days. shopify_orders shows no such shortfall on the same days, so this is reporting lag rather than a real fall. Read these days as incomplete: a week-26 total built on them is understated, and any ratio that puts ad_spend against a complete table is distorted until they settle."
+      },
+      {
+        "check": "reporting_lag",
+        "label": "still filling in",
+        "severity": "medium",
+        "source": "ga4_sessions",
+        "start_date": "2025-07-05",
+        "end_date": "2025-07-06",
+        "dates_in_week": [
+          "2025-07-05",
+          "2025-07-06"
+        ],
+        "n_days_in_week": {
+          "value": 2.0,
+          "display": "2"
+        },
+        "description": "ga4_sessions is still filling in over the last 2 days of the window, 2025-07-05 to 2025-07-06: the sessions total stands at 90% on 2025-07-05 and 60% on 2025-07-06, against what the same weekday in the previous 4 weeks implies -- about 18,654 sessions short of settled days. shopify_orders shows no such shortfall on the same days, so this is reporting lag rather than a real fall. Read these days as incomplete: a week-26 total built on them is understated, and any ratio that puts ga4_sessions against a complete table is distorted until they settle."
+      }
+    ],
+    "over_claim": null,
+    "totals": {
+      "shopify_revenue": {
+        "value": 563472.11,
+        "display": "$563.5k"
+      },
+      "shopify_net_revenue": {
+        "value": 528921.74,
+        "display": "$528.9k"
+      }
+    },
+    "change_vs_prior_week": {
+      "shopify_revenue": {
+        "label": "store revenue",
+        "absolute": {
+          "value": 10537.32,
+          "display": "$10.5k"
+        },
+        "pct": {
+          "value": 0.0191,
+          "display": "1.9%"
+        },
+        "direction": "up"
+      },
+      "shopify_net_revenue": {
+        "label": "net store revenue",
+        "absolute": {
+          "value": 6815.73,
+          "display": "$6.8k"
+        },
+        "pct": {
+          "value": 0.0131,
+          "display": "1.3%"
+        },
+        "direction": "up"
+      }
+    },
+    "channels": [],
+    "drivers": null,
+    "holdouts": {
+      "n_running": {
+        "value": 0.0,
+        "display": "0"
+      },
+      "running": [],
+      "n_with_results": {
+        "value": 0.0,
+        "display": "0"
+      },
+      "results": [],
+      "note": "A result is measured over the whole holdout window, not this week alone, and only exists once the window has closed. Incremental ROAS is what the channel is worth; reported ROAS is what the platform claims. Write an interval as 1.99x (90% interval 1.89x to 2.11x)."
+    },
+    "notes": [
+      "Store revenue cannot be split by channel; platform-attributed revenue is not store revenue.",
+      "Reported ROAS is what the platforms claim. Only a holdout says what a channel is worth."
+    ]
+  }
+}

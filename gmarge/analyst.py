@@ -1,18 +1,31 @@
-"""Weekly read-outs: Python computes the numbers, the model only phrases them.
+"""Weekly read-outs: Python computes and formats the numbers, the model phrases them.
 
 The shape of the pipeline (see CLAUDE.md) is::
 
     metrics + quality findings + anomalies
-        -> build_facts(week)      every number the read-out may use
+        -> build_facts(week)      every number the read-out may use, formatted
+        -> prompt_facts(facts)    display strings only -- what the model sees
         -> the model              phrasing, and nothing else
-        -> check_numbers()        every figure in the reply traced to a fact
+        -> check_numbers()        every figure in the reply matched to a display
         -> readouts/week-NN.json  committed, after a human has read it
 
-The model is never asked to add, divide, compare or estimate. It is handed a
-page of facts and asked for at most 120 words of prose. Anything it writes
-that cannot be traced back to one of those facts is treated as a fault: the
-request is made once more with the offending figures named, and if the second
-reply is no better, nothing is saved.
+Three rules hold this together.
+
+**Python formats.** Every number in the facts is a ``{"value", "display"}``
+pair: the value for audit, the display for the read-out. ``$531.6k``,
+``1.30x``, ``12.2%`` are decided here, not by the model, and the model is shown
+the displays alone -- :func:`prompt_facts` strips the values, so there is no
+raw float in the prompt to round, rescale or mistype.
+
+**One source of truth for "normal".** Whether a week is outside its normal
+range is the anomaly detector's verdict and nobody else's. This module does not
+score levels, does not compute a band, and has no opinion of its own; it passes
+on the flags ``gmarge/anomalies.py`` raised for the week. A week with a flag
+leads with it and cannot be called normal.
+
+**Incomplete weeks do not get verdicts.** When a source is still filling in,
+every total that draws on it is listed in ``completeness.totals_still_filling_in``
+and must be described as incomplete rather than as a rise or a fall.
 
 ``--dry-run`` writes a read-out assembled in Python from the same facts, with
 no API call at all. The tests use it, and it doubles as a check on the facts:
@@ -33,15 +46,7 @@ import numpy as np
 import pandas as pd
 
 from gmarge import llm
-from gmarge.anomalies import (
-    MAD_FLOOR_SHARE,
-    MAD_TO_SIGMA,
-    SCORE_THRESHOLD,
-    TRAILING_WEEKS,
-    Anomaly,
-    detect_anomalies,
-    modified_z_score,
-)
+from gmarge.anomalies import METRICS_BY_KEY, Anomaly, detect_anomalies
 from gmarge.metrics import DEFAULT_DATA_DIR, Tables, all_metrics, load_tables
 from gmarge.quality import Finding, run_checks
 
@@ -49,26 +54,19 @@ DEFAULT_READOUT_DIR = "readouts"
 DEFAULT_WEEKS = 8
 WORD_LIMIT = 120
 
-MONEY_DP = 2
-RATIO_DP = 4
+# The headline figures, and how each is written. MONEY is $531.6k, RATIO is
+# 1.30x, PCT is 12.2%, COUNT is 7.
+MONEY, RATIO, PCT, COUNT = "money", "ratio", "pct", "count"
 
-# The headline figures a read-out is allowed to lead on, and how each is
-# rounded in the facts. Rounding here and not at the point of use means the
-# number the model is shown is exactly the number the check will accept.
 HEADLINE = {
-    "shopify_revenue": MONEY_DP,
-    "shopify_net_revenue": MONEY_DP,
-    "ad_spend": MONEY_DP,
-    "platform_attributed_revenue": MONEY_DP,
-    "over_claimed_revenue": MONEY_DP,
-    "over_claim_ratio": RATIO_DP,
-    "blended_reported_roas": RATIO_DP,
+    "shopify_revenue": MONEY,
+    "shopify_net_revenue": MONEY,
+    "ad_spend": MONEY,
+    "platform_attributed_revenue": MONEY,
+    "over_claimed_revenue": MONEY,
+    "over_claim_ratio": RATIO,
+    "blended_reported_roas": RATIO,
 }
-
-# Which of those get a trailing-window band. Levels and ratios both move for
-# ordinary reasons, so the band is what says whether this week's move is one
-# of them.
-BANDED = ("shopify_revenue", "ad_spend", "platform_attributed_revenue", "over_claim_ratio")
 
 LABELS = {
     "shopify_revenue": "store revenue",
@@ -80,6 +78,18 @@ LABELS = {
     "blended_reported_roas": "blended reported ROAS",
 }
 
+# Which table each headline figure is read from. A figure is only as complete
+# as the tables under it, which is what makes a partial week describable.
+TOTAL_SOURCES = {
+    "shopify_revenue": ("shopify_orders",),
+    "shopify_net_revenue": ("shopify_orders",),
+    "ad_spend": ("ad_spend",),
+    "platform_attributed_revenue": ("ad_spend",),
+    "over_claimed_revenue": ("shopify_orders", "ad_spend"),
+    "over_claim_ratio": ("shopify_orders", "ad_spend"),
+    "blended_reported_roas": ("ad_spend",),
+}
+
 # Week-on-week changes that can be split by channel. Store revenue cannot be:
 # the platforms' attributed revenue is not the store's revenue.
 DRIVEN = ("ad_spend", "platform_attributed_revenue")
@@ -87,6 +97,71 @@ DRIVEN = ("ad_spend", "platform_attributed_revenue")
 # The checks that mean a day is missing or still filling in, as opposed to
 # present but wrong. Only these bear on whether the week's data is complete.
 INCOMPLETE_CHECKS = ("reporting_lag", "missing_days")
+
+CHECK_LABELS = {
+    "reporting_lag": "still filling in",
+    "missing_days": "missing entirely",
+    "duplicate_orders": "duplicate orders",
+    "pixel_double_counting": "pixel double-counting",
+}
+
+# An anomaly metric's unit, in this module's formats.
+UNIT_KIND = {"money": MONEY, "percent": PCT, "x": RATIO, "ratio": RATIO}
+
+# Free text that is kept in the saved facts for the reviewer but withheld from
+# the model: it carries figures in another module's formatting, and the model
+# may only quote this module's displays.
+PROMPT_SKIP = ("description",)
+
+
+# --------------------------------------------------------------------------
+# Formatting. Every number a read-out can use is written here, once.
+# --------------------------------------------------------------------------
+
+
+def money_display(value: float) -> str:
+    """``$531.6k``, ``$1.2m``, ``$532``. Magnitude only -- direction is a word."""
+    size = abs(float(value))
+    if size >= 1_000_000:
+        return f"${size / 1_000_000:,.1f}m"
+    if size >= 1_000:
+        return f"${size / 1_000:,.1f}k"
+    return f"${size:,.0f}"
+
+
+def ratio_display(value: float) -> str:
+    """``1.30x``."""
+    return f"{abs(float(value)):,.2f}x"
+
+
+def pct_display(value: float) -> str:
+    """``12.2%``, from a ratio."""
+    return f"{abs(float(value)) * 100:.1f}%"
+
+
+def count_display(value: float) -> str:
+    """``7``."""
+    return f"{int(round(float(value))):,}"
+
+
+DISPLAY = {MONEY: money_display, RATIO: ratio_display, PCT: pct_display, COUNT: count_display}
+PLACES = {MONEY: 2, RATIO: 4, PCT: 4, COUNT: 0}
+
+
+def fact(value, kind: str) -> dict | None:
+    """One number, as the reviewer sees it and as the read-out must write it.
+
+    ``value`` is kept for audit and stripped before the prompt is built;
+    ``display`` is the only form the model is given and the only form the
+    check accepts. Displays carry magnitude, not sign: a fall is a direction
+    in the prose, which keeps "down $19.3k" from reading "down -$19.3k".
+    """
+    if value is None:
+        return None
+    number = float(value)
+    if not np.isfinite(number):
+        return None
+    return {"value": round(number, PLACES[kind]), "display": DISPLAY[kind](number)}
 
 
 # --------------------------------------------------------------------------
@@ -117,19 +192,13 @@ def analyse(source: str | Path | Tables = DEFAULT_DATA_DIR) -> Analysis:
     )
 
 
+def week_number(facts: dict) -> int:
+    return int(facts["week"]["number"]["value"])
+
+
 # --------------------------------------------------------------------------
 # Facts
 # --------------------------------------------------------------------------
-
-
-def _round(value, places: int):
-    """Round for presentation, keeping ``None`` for anything undefined."""
-    if value is None:
-        return None
-    number = float(value)
-    if not np.isfinite(number):
-        return None
-    return round(number, places)
 
 
 def _headline(row: pd.Series) -> dict:
@@ -145,61 +214,30 @@ def _headline(row: pd.Series) -> dict:
         "over_claim_ratio": float(row["over_claim_ratio"]),
         "blended_reported_roas": attributed / spend if spend else None,
     }
-    return {key: _round(values[key], places) for key, places in HEADLINE.items()}
+    return {key: fact(values[key], kind) for key, kind in HEADLINE.items()}
 
 
-def _change(current: dict, prior: dict) -> dict:
-    """Absolute and relative week-on-week change, per headline figure."""
+def _change(current: dict, prior: dict, filling_in: set[str]) -> dict:
+    """Week-on-week change, with a direction and whether it can be read as one.
+
+    A total whose tables are still filling in gets its move reported as
+    incomplete: the figure is real arithmetic on the rows that have landed, and
+    saying it "fell" would be reading a reporting lag as a result.
+    """
     out = {}
-    for key, places in HEADLINE.items():
+    for key, kind in HEADLINE.items():
         now, before = current.get(key), prior.get(key)
         if now is None or before is None:
-            out[key] = {"absolute": None, "pct": None, "direction": "unknown"}
             continue
-        absolute = now - before
+        absolute = now["value"] - before["value"]
         out[key] = {
-            "absolute": _round(absolute, places),
-            "pct": _round(absolute / before, RATIO_DP) if before else None,
+            "label": LABELS[key],
+            "absolute": fact(absolute, kind),
+            "pct": fact(absolute / before["value"], PCT) if before["value"] else None,
             "direction": "up" if absolute > 0 else "down" if absolute < 0 else "flat",
+            "still_filling_in": key in filling_in,
         }
     return out
-
-
-def _band(series: pd.Series, week: int, value: float, places: int, trailing_weeks: int) -> dict:
-    """This week against its own trailing weeks, scored the way a flag is.
-
-    The same modified z-score the anomaly detector uses, so "outside the normal
-    range" in a read-out means what it means in a flag.
-    """
-    trailing = series.loc[week - trailing_weeks : week - 1].dropna()
-    if len(trailing) < trailing_weeks or value is None:
-        return {
-            "trailing_weeks": int(len(trailing)),
-            "enough_history": False,
-            "outside_normal_range": None,
-        }
-
-    score, median, mad = modified_z_score(trailing, float(value))
-    scale = max(mad, MAD_FLOOR_SHARE * abs(median))
-    half_width = SCORE_THRESHOLD * scale / MAD_TO_SIGMA
-    return {
-        "trailing_weeks": int(trailing_weeks),
-        "enough_history": True,
-        "trailing_median": _round(median, places),
-        "normal_range_low": _round(median - half_width, places),
-        "normal_range_high": _round(median + half_width, places),
-        "robust_score": _round(score, 1),
-        "score_threshold": SCORE_THRESHOLD,
-        "outside_normal_range": bool(abs(score) >= SCORE_THRESHOLD),
-    }
-
-
-def _bands(weekly: pd.DataFrame, week: int, headline: dict, trailing_weeks: int) -> dict:
-    indexed = weekly.set_index("week")
-    return {
-        key: _band(indexed[key], week, headline.get(key), HEADLINE[key], trailing_weeks)
-        for key in BANDED
-    }
 
 
 def _channels(roas_week: pd.DataFrame, week: int, prior_week: int | None) -> list[dict]:
@@ -212,106 +250,148 @@ def _channels(roas_week: pd.DataFrame, week: int, prior_week: int | None) -> lis
         prior = before.loc[channel] if before is not None and channel in before.index else None
         entry = {
             "channel": str(channel),
-            "spend": _round(row["spend"], MONEY_DP),
-            "platform_attributed_revenue": _round(row["platform_attributed_revenue"], MONEY_DP),
-            "reported_roas": _round(row["reported_roas"], RATIO_DP),
+            "spend": fact(row["spend"], MONEY),
+            "platform_attributed_revenue": fact(row["platform_attributed_revenue"], MONEY),
+            "reported_roas": fact(row["reported_roas"], RATIO),
         }
         for column in DRIVEN:
             source = "spend" if column == "ad_spend" else column
-            entry[f"{column}_change"] = (
-                _round(float(row[source]) - float(prior[source]), MONEY_DP) if prior is not None else None
-            )
+            move = float(row[source]) - float(prior[source]) if prior is not None else None
+            entry[f"{column}_change"] = fact(move, MONEY)
+            entry[f"{column}_direction"] = None if move is None else ("up" if move > 0 else "down")
+            entry[f"_{column}_move"] = move  # dropped below; ranking only
         rows.append(entry)
-    return sorted(rows, key=lambda r: r["spend"], reverse=True)
+    return sorted(rows, key=lambda r: r["spend"]["value"], reverse=True)
 
 
 def _drivers(channels: list[dict], change: dict) -> dict:
-    """Which channel moved a week-on-week change, and by how much of it.
+    """Which channel moved a week-on-week change, and how much of it.
 
-    A share is the channel's own move over the total move, so shares can
-    exceed 100% when channels pull against each other -- which is a fact about
-    the week, not a rounding problem, and is left visible.
+    A share is the channel's own move over the total move, so shares can exceed
+    100% when channels pull against each other -- a fact about the week, left
+    visible rather than normalised away.
     """
     out = {}
     for column in DRIVEN:
-        total = change[column]["absolute"]
-        contributions = [c for c in channels if c[f"{column}_change"] is not None]
+        total = change.get(column, {}).get("absolute")
+        contributions = [c for c in channels if c[f"_{column}_move"] is not None]
         if total is None or not contributions:
-            out[column] = {"total_change": total, "channels": [], "largest": None}
+            out[column] = {"label": LABELS[column], "total_change": total, "channels": [], "largest": None}
             continue
 
-        ranked = sorted(contributions, key=lambda c: abs(c[f"{column}_change"]), reverse=True)
+        ranked = sorted(contributions, key=lambda c: abs(c[f"_{column}_move"]), reverse=True)
         listed = [
             {
                 "channel": c["channel"],
                 "change": c[f"{column}_change"],
-                "share_of_change": _round(c[f"{column}_change"] / total, RATIO_DP) if total else None,
+                "direction": c[f"{column}_direction"],
+                "share_of_change": fact(c[f"_{column}_move"] / total["value"], PCT) if total["value"] else None,
             }
             for c in ranked
         ]
-        out[column] = {"total_change": total, "channels": listed, "largest": listed[0]}
+        out[column] = {
+            "label": LABELS[column],
+            "total_change": total,
+            "direction": change[column]["direction"],
+            "still_filling_in": change[column]["still_filling_in"],
+            "channels": listed,
+            "largest": listed[0],
+        }
     return out
 
 
-def _anomalies(anomalies: list[Anomaly], week: int) -> list[dict]:
-    """The week's flags, trimmed to what a read-out could say about them."""
-    keep = (
-        "value", "trailing_median", "pct_change", "robust_score",
-        "trailing_weeks", "spend", "platform_attributed_revenue",
-    )
-    out = []
+def _anomalies(anomalies: list[Anomaly], week: int) -> dict:
+    """The week's flags, from the detector, in this module's formats.
+
+    This is the only thing in the facts that says whether the week is outside
+    its normal range. The read-out gets the flags or it gets nothing; it never
+    gets a band of this module's own to argue with.
+    """
+    flags = []
     for flag in (a for a in anomalies if a.week == week):
-        record = flag.to_dict()
-        record["numbers"] = {k: v for k, v in record["numbers"].items() if k in keep}
-        record["share_of_move"] = _round(record["share_of_move"], RATIO_DP)
-        out.append(record)
-    return out
+        kind = UNIT_KIND[METRICS_BY_KEY[flag.metric].unit]
+        flags.append(
+            {
+                "channel": flag.channel,
+                "metric": flag.metric,
+                "metric_label": flag.metric_label,
+                "direction": flag.direction,
+                "severity": flag.severity,
+                "value": fact(flag.value, kind),
+                "trailing_median": fact(flag.baseline, kind),
+                "trailing_weeks": fact(flag.numbers["trailing_weeks"], COUNT),
+                "pct_change": fact(flag.pct_change, PCT),
+                "campaign": flag.campaign,
+                "ad_set": flag.ad_set,
+                "share_of_move": fact(flag.share_of_move, PCT),
+                "description": flag.description,
+            }
+        )
+    return {
+        "n_flags": fact(len(flags), COUNT),
+        "flags": flags,
+        "source": "the weekly anomaly scan in gmarge/anomalies.py",
+    }
 
 
 def _findings(findings: list[Finding], start: str, end: str) -> list[dict]:
     """Quality findings whose dates fall inside the week.
 
-    A finding can straddle a week boundary, so each one also carries the days
-    of its own that fall inside *this* week, and how many. A read-out that
-    wants to say how many days a problem covers can then quote a number
-    instead of working it out.
+    A finding can straddle a week boundary, so each carries the days of its own
+    that fall inside *this* week, and how many, rather than a range for a
+    read-out to count across.
     """
     out = []
     for finding in findings:
         if finding.start_date > end or finding.end_date < start:
             continue
-        record = finding.to_dict()
-        inside = [day for day in record["dates"] if start <= day <= end]
-        record["dates_in_week"] = inside
-        record["n_days_in_week"] = len(inside)
-        out.append(record)
+        inside = [day for day in finding.dates if start <= day <= end]
+        out.append(
+            {
+                "check": finding.check,
+                "label": CHECK_LABELS.get(finding.check, finding.check.replace("_", " ")),
+                "severity": finding.severity,
+                "source": finding.source,
+                "start_date": finding.start_date,
+                "end_date": finding.end_date,
+                "dates_in_week": inside,
+                "n_days_in_week": fact(len(inside), COUNT),
+                "description": finding.description,
+            }
+        )
     return out
 
 
 def _completeness(findings: list[dict], days_in_week: int) -> dict:
-    """Whether anything is known to be missing from the week, and how much.
+    """What is missing from the week, how much of it, and what it invalidates.
 
-    Every count a read-out could want is spelled out here -- days in the week,
-    days with complete data, days affected, and the affected days themselves.
-    The model is told to quote these and never to count or subtract days of
-    its own, because a day it works out for itself is a day nobody checked.
+    Every count a read-out could want is spelled out -- days in the week, days
+    with complete data, days affected, the affected days themselves -- because
+    a count worked out from a date range is a count nobody checked. So is the
+    list of totals that cannot be read as a rise or a fall.
     """
     incomplete = [f for f in findings if f["check"] in INCOMPLETE_CHECKS]
     affected_dates = sorted({day for f in incomplete for day in f["dates_in_week"]})
+    sources = {f["source"] for f in incomplete}
+    filling_in = [key for key, tables in TOTAL_SOURCES.items() if sources.intersection(tables)]
 
     return {
         "complete": not incomplete,
-        "days_in_week": days_in_week,
-        "days_affected": len(affected_dates),
-        "days_with_complete_data": days_in_week - len(affected_dates),
+        "days_in_week": fact(days_in_week, COUNT),
+        "days_affected": fact(len(affected_dates), COUNT),
+        "days_with_complete_data": fact(days_in_week - len(affected_dates), COUNT),
         "affected_dates": affected_dates,
+        "affected_sources": sorted(sources),
+        "totals_still_filling_in": filling_in,
+        "totals_still_filling_in_labels": [LABELS[key] for key in filling_in],
+        "channel_figures_still_filling_in": "ad_spend" in sources,
         "affected": [
             {
                 "source": f["source"],
                 "check": f["check"],
+                "label": f["label"],
                 "start_date": f["start_date"],
                 "end_date": f["end_date"],
-                "n_days": f["n_days"],
                 "n_days_in_week": f["n_days_in_week"],
                 "dates_in_week": f["dates_in_week"],
             }
@@ -320,59 +400,147 @@ def _completeness(findings: list[dict], days_in_week: int) -> dict:
     }
 
 
-def build_facts(analysis: Analysis, week: int, trailing_weeks: int = TRAILING_WEEKS) -> dict:
-    """Every number the read-out for ``week`` is allowed to use.
+def _holdouts(holdouts: pd.DataFrame, start: str, end: str) -> dict:
+    """Geo holdouts whose window overlaps the week.
 
-    Nothing outside this dict may appear in the read-out, which is what makes
-    :func:`check_numbers` a real check rather than a formality.
+    A holdout measures a whole four-week window, not a single week inside it,
+    and the note says so: these are the only incremental figures in the facts,
+    and they must not be read as this week's result.
+    """
+    running = []
+    for row in holdouts.itertuples():
+        window_start = row.start_date.date().isoformat()
+        window_end = row.end_date.date().isoformat()
+        if window_start > end or window_end < start:
+            continue
+        running.append(
+            {
+                "channel": row.channel,
+                "window_start": window_start,
+                "window_end": window_end,
+                "covers_whole_week": bool(window_start <= start and window_end >= end),
+                "incremental_roas": fact(row.incremental_roas, RATIO),
+                "incremental_roas_ci_low": fact(row.incremental_roas_ci_low, RATIO),
+                "incremental_roas_ci_high": fact(row.incremental_roas_ci_high, RATIO),
+                "reported_roas_in_window": fact(row.reported_roas_in_window, RATIO),
+                "over_claim_multiple": fact(row.over_claim_multiple, RATIO),
+                "lift_pct": fact(row.lift_pct, PCT),
+                "paused_spend_estimate": fact(row.paused_spend_estimate, MONEY),
+                "confidence": fact(row.confidence, PCT),
+            }
+        )
+    return {
+        "n_running": fact(len(running), COUNT),
+        "running": running,
+        "note": (
+            "Measured over the whole holdout window, not this week alone. "
+            "Incremental ROAS is what the channel is worth; reported ROAS is what the platform claims."
+        ),
+    }
+
+
+def build_facts(analysis: Analysis, week: int) -> dict:
+    """Every number the read-out for ``week`` is allowed to use, already formatted.
+
+    Nothing outside this dict may appear in the read-out, and nothing in it is
+    a raw float by the time the model sees it -- see :func:`prompt_facts`.
     """
     weekly = analysis.metrics["weekly_reconciliation"]
     if week not in set(int(w) for w in weekly["week"]):
         raise ValueError(f"week {week} is not in the data")
 
     row = weekly[weekly["week"] == week].iloc[0]
+    start, end = str(row["week_start"].date()), str(row["week_end"].date())
     prior_week = week - 1 if (weekly["week"] == week - 1).any() else None
     prior_row = weekly[weekly["week"] == prior_week].iloc[0] if prior_week else None
 
+    findings = _findings(analysis.findings, start, end)
+    completeness = _completeness(findings, int(row["days"]))
+    filling_in = set(completeness["totals_still_filling_in"])
+
     headline = _headline(row)
     prior_headline = _headline(prior_row) if prior_row is not None else {}
-    change = _change(headline, prior_headline)
+    change = _change(headline, prior_headline, filling_in) if prior_row is not None else None
     channels = _channels(analysis.metrics["reported_roas_by_channel_week"], week, prior_week)
-    findings = _findings(analysis.findings, str(row["week_start"].date()), str(row["week_end"].date()))
+    drivers = _drivers(channels, change) if change else None
 
-    return {
+    facts = {
         "brand": analysis.metrics["brand"],
         "disclaimer": analysis.metrics["disclaimer"],
         "week": {
-            "week": int(week),
-            "week_start": str(row["week_start"].date()),
-            "week_end": str(row["week_end"].date()),
-            "days": int(row["days"]),
+            "number": fact(week, COUNT),
+            "week_start": start,
+            "week_end": end,
+            "days": fact(int(row["days"]), COUNT),
         },
         "prior_week": (
             {
-                "week": int(prior_week),
+                "number": fact(prior_week, COUNT),
                 "week_start": str(prior_row["week_start"].date()),
                 "week_end": str(prior_row["week_end"].date()),
             }
             if prior_row is not None
             else None
         ),
-        "data_window": analysis.metrics["window"],
-        "totals": headline,
-        "prior_week_totals": prior_headline or None,
-        "change_vs_prior_week": change if prior_row is not None else None,
-        "normal_range": _bands(weekly, week, headline, trailing_weeks),
-        "channels": channels,
-        "drivers": _drivers(channels, change) if prior_row is not None else None,
+        "data_window": {
+            "start": analysis.metrics["window"]["start"],
+            "end": analysis.metrics["window"]["end"],
+            "n_weeks": fact(analysis.metrics["window"]["n_weeks"], COUNT),
+        },
         "anomalies": _anomalies(analysis.anomalies, week),
+        "completeness": completeness,
         "quality_findings": findings,
-        "completeness": _completeness(findings, int(row["days"])),
+        "over_claim": {
+            "ratio": headline["over_claim_ratio"],
+            "over_claimed_revenue": headline["over_claimed_revenue"],
+            "platform_attributed_revenue": headline["platform_attributed_revenue"],
+            "shopify_revenue": headline["shopify_revenue"],
+            "still_filling_in": "over_claim_ratio" in filling_in,
+            "meaning": (
+                "The platforms between them claimed this much more revenue than the store took. "
+                "A ratio above 1.00x is the same order credited more than once."
+            ),
+        },
+        "totals": headline,
+        "change_vs_prior_week": change,
+        "channels": channels,
+        "drivers": drivers,
+        "holdouts": _holdouts(analysis.metrics["holdouts"], start, end),
         "notes": [
             "Store revenue cannot be split by channel; platform-attributed revenue is not store revenue.",
-            "Reported ROAS is what the platforms claim, not measured incremental ROAS.",
+            "Reported ROAS is what the platforms claim. Only a holdout says what a channel is worth.",
         ],
     }
+    return _strip_private(facts)
+
+
+def _strip_private(node):
+    """Drop the ``_``-prefixed working values used for ranking."""
+    if isinstance(node, dict):
+        return {k: _strip_private(v) for k, v in node.items() if not k.startswith("_")}
+    if isinstance(node, list):
+        return [_strip_private(v) for v in node]
+    return node
+
+
+def prompt_facts(facts: dict) -> dict:
+    """The facts as the model sees them: display strings, no raw numbers.
+
+    Every ``{"value", "display"}`` pair collapses to its display, and free text
+    written by another module is withheld -- it carries figures in another
+    format, and the model may only quote the displays this module wrote.
+    """
+
+    def walk(node):
+        if isinstance(node, dict):
+            if set(node) == {"value", "display"}:
+                return node["display"]
+            return {k: walk(v) for k, v in node.items() if k not in PROMPT_SKIP}
+        if isinstance(node, list):
+            return [walk(v) for v in node]
+        return node
+
+    return walk(facts)
 
 
 # --------------------------------------------------------------------------
@@ -380,33 +548,8 @@ def build_facts(analysis: Analysis, week: int, trailing_weeks: int = TRAILING_WE
 # --------------------------------------------------------------------------
 
 DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
-NUMBER = re.compile(r"-?\$?\d[\d,]*(?:\.\d+)?%?")
+FIGURE = re.compile(r"\$?\d[\d,]*(?:\.\d+)?(?:%|x|k|m)?", re.IGNORECASE)
 SENTENCE = re.compile(r"(?<=[.!?])\s+")
-
-
-def offending_sentences(text: str, unsupported: list[str], facts: dict) -> list[str]:
-    """Each unsupported figure with the sentence it was written in.
-
-    A bare list of figures says a read-out failed; it does not say what the
-    model was trying to write. ``6`` means nothing on its own and everything
-    once you can see it sat in "only 6 of 7 days reported" -- that is a model
-    counting days for itself, and it is fixed in the facts, not in the check.
-
-    A sentence is searched with the same tokeniser the check uses rather than
-    for the text of the figure, because ``6`` is a substring of ``$563,472.11``
-    and would otherwise point at the wrong sentence.
-    """
-    _, fact_strings = _fact_values(facts)
-    sentences = [s.strip() for s in SENTENCE.split(text.strip()) if s.strip()]
-
-    lines = []
-    for token in unsupported:
-        where = next(
-            (s for s in sentences if token in _written_tokens(s, fact_strings)),
-            text.strip(),
-        )
-        lines.append(f"{token!r} in: {where}")
-    return lines
 
 
 class NumberCheckError(RuntimeError):
@@ -423,88 +566,86 @@ class NumberCheckError(RuntimeError):
         )
 
 
-def _fact_values(facts: dict) -> tuple[list[float], set[str]]:
-    """Every number and every string anywhere in the facts."""
-    numbers: list[float] = []
-    strings: set[str] = set()
-
-    def walk(node) -> None:
-        if isinstance(node, dict):
-            for value in node.values():
-                walk(value)
-        elif isinstance(node, (list, tuple)):
-            for value in node:
-                walk(value)
-        elif isinstance(node, bool) or node is None:
-            return
-        elif isinstance(node, (int, float)):
-            numbers.append(float(node))
-        elif isinstance(node, str):
-            strings.add(node)
-
-    walk(facts)
-    return numbers, strings
+def _strings(node, found: set[str]) -> set[str]:
+    """Every string leaf of the facts the model was shown."""
+    if isinstance(node, dict):
+        for value in node.values():
+            _strings(value, found)
+    elif isinstance(node, list):
+        for value in node:
+            _strings(value, found)
+    elif isinstance(node, str):
+        found.add(node)
+    return found
 
 
-def _parse_number(token: str) -> tuple[float, int]:
-    """``(magnitude, decimal places written)`` for one written figure."""
-    body = token.rstrip("%").replace("$", "").replace(",", "").lstrip("-")
-    return abs(float(body)), len(body.partition(".")[2])
-
-
-def _supported(token: str, fact_numbers: list[float]) -> bool:
-    """Whether one written figure rounds to a number in the facts.
-
-    Three allowances, and no others. A figure may be written to fewer decimal
-    places than the fact it comes from; a ratio may be written as a percentage
-    (0.0191 as 1.9%); and sign is carried by the wording rather than the digits,
-    so magnitudes are compared. Rounding to the nearest thousand, abbreviating
-    and unit conversion are all mismatches, which is deliberate -- the point is
-    to catch a figure the model made up, and made-up figures are usually round.
-    """
-    written, places = _parse_number(token)
-    tolerance = 0.5 * 10 ** -places + 1e-9
-    for value in fact_numbers:
-        for candidate in (abs(value), abs(value) * 100.0):
-            if abs(candidate - written) <= tolerance:
-                return True
-    return False
-
-
-def _mask(text: str, fact_strings: set[str]) -> str:
-    """Blank out anything quoted verbatim from the facts.
+def _mask(text: str, names: list[str]) -> str:
+    """Blank out names quoted verbatim from the facts.
 
     Names carry digits -- the ad set ``Core | Broad 25-44``, the region
-    ``Region 03`` -- and so do the descriptions the quality and anomaly
-    modules write, which are themselves computed in Python. Quoting one of
-    those is not inventing a figure, so it is taken out of the text before the
-    figures that remain are checked one by one. Longest first, so a name
-    inside a description cannot be half-masked.
+    ``Region 03`` -- and quoting one is not writing a figure. Longest first, so
+    a name inside a longer name cannot be half-masked.
     """
-    for string in sorted((s for s in fact_strings if any(c.isdigit() for c in s)), key=len, reverse=True):
-        text = text.replace(string, " ")
+    for name in names:
+        text = text.replace(name, " ")
     return text
 
 
-def _written_tokens(text: str, fact_strings: set[str]) -> list[str]:
+def _written_figures(text: str, names: list[str]) -> list[str]:
     """Every date and figure written in ``text``, as the check sees them."""
-    return DATE.findall(text) + NUMBER.findall(_mask(DATE.sub(" ", text), fact_strings))
+    return DATE.findall(text) + FIGURE.findall(_mask(DATE.sub(" ", text), names))
 
 
 def check_numbers(text: str, facts: dict) -> list[str]:
-    """Every figure in ``text`` that cannot be traced to ``facts``.
+    """Every figure in ``text`` that is not a display string in ``facts``.
 
-    An empty list means the read-out is safe to save.
+    The model is shown displays and nothing else, so it is held to them
+    exactly: ``$531.6k`` passes and ``$531,600``, ``$532k`` and ``$0.5m`` do
+    not. There is no rounding allowance, because there is nothing left to
+    round -- Python already did it. An empty list means the read-out is safe
+    to save.
     """
-    fact_numbers, fact_strings = _fact_values(facts)
-    haystack = " ".join(fact_strings)
+    shown = _strings(prompt_facts(facts), set())
+    allowed = {s.casefold() for s in shown if FIGURE.fullmatch(s)}
+    names = sorted(
+        (s for s in shown if any(c.isdigit() for c in s) and not FIGURE.fullmatch(s)),
+        key=len,
+        reverse=True,
+    )
+    dates = " ".join(s for s in shown if DATE.search(s))
 
     unsupported = []
-    for token in _written_tokens(text, fact_strings):
-        supported = token in haystack if DATE.fullmatch(token) else _supported(token, fact_numbers)
+    for token in _written_figures(text, names):
+        supported = token in dates if DATE.fullmatch(token) else token.casefold() in allowed
         if not supported:
             unsupported.append(token)
     return unsupported
+
+
+def offending_sentences(text: str, unsupported: list[str], facts: dict) -> list[str]:
+    """Each unsupported figure with the sentence it was written in.
+
+    A bare list of figures says a read-out failed; it does not say what the
+    model was trying to write. ``6`` means nothing on its own and everything
+    once you can see it sat in "only 6 of 7 days reported" -- a model counting
+    days for itself, which is fixed in the facts, not in the check.
+
+    Sentences are searched with the check's own tokeniser rather than for the
+    text of the figure, because ``6`` is a substring of ``$563,472.11``.
+    """
+    shown = _strings(prompt_facts(facts), set())
+    names = sorted(
+        (s for s in shown if any(c.isdigit() for c in s) and not FIGURE.fullmatch(s)),
+        key=len,
+        reverse=True,
+    )
+    sentences = [s.strip() for s in SENTENCE.split(text.strip()) if s.strip()]
+
+    lines = []
+    for token in unsupported:
+        where = next((s for s in sentences if token in _written_figures(s, names)), text.strip())
+        lines.append(f"{token!r} in: {where}")
+    return lines
 
 
 def word_count(text: str) -> int:
@@ -517,26 +658,37 @@ def word_count(text: str) -> int:
 
 SYSTEM = f"""You write the weekly read-out for a marketing-measurement demo.
 
-Every figure you could need is in the FACTS the user message carries. These
-rules are hard:
+Everything you need is in the FACTS the user message carries. Every figure
+there is already written the way it must appear. These rules are hard:
 
 1. At most {WORD_LIMIT} words. Plain prose in one or two short paragraphs. No
    headings, no bullet points, no markdown.
-2. Cover three things, in this order: what changed this week, what caused most
-   of it, and whether the week is outside its normal range.
-3. Use only numbers that appear in the FACTS. Copy each figure as it is written
-   there. You may drop decimal places ($563,472.11 as $563,472). You may not
-   round to the nearest thousand, abbreviate (no "k", no "m"), convert a unit,
-   or introduce a figure of your own. Do no arithmetic of any kind: if a number
-   is not in the FACTS, you cannot use it.
-4. If `completeness.complete` is false, say so and name what is missing. Say it
-   only with the counts already in `completeness`: `days_in_week`,
-   `days_with_complete_data`, `days_affected`, `affected_dates`, and the
-   `source` of each entry in `affected`. Do not count days, do not subtract one
-   count from another, and do not work out a day or a date from a range. If you
-   want to say how many days something covers, there is a count for it; quote
-   that count or leave it out.
-5. This is synthetic sample data for a brand that does not exist. Do not write
+2. Write in this order, and lead with the first of these that applies:
+   a. Anything flagged in `anomalies.flags`, and anything in `completeness`
+      that is not complete. If there is a flag, it leads the read-out.
+   b. `over_claim`: the ratio, and what it means for this week.
+   c. `drivers`: the channel behind most of the week's change.
+   Then, if `holdouts.running` is not empty, one sentence on what that holdout
+   measured -- saying it is the holdout window, not this week.
+3. Quote figures exactly as they are written in the FACTS. `$531.6k` is
+   written `$531.6k`, never `$531,600`, `$532k`, `0.5m` or `531.6`. Do no
+   arithmetic of any kind: no adding, no subtracting, no percentages of your
+   own, no converting a unit. If a figure is not in the FACTS, you cannot use
+   it. Direction is a word -- "up", "down" -- and the FACTS give it to you.
+4. `anomalies` is the only thing that says whether the week is outside its
+   normal range. If `anomalies.flags` is not empty, say what was flagged and
+   never say the week was normal or that every metric was in range. If it is
+   empty, you may say nothing was flagged -- which is not the same as saying
+   everything is fine, so do not say everything is fine.
+5. If `completeness.complete` is false, say so and name what is missing, using
+   only the counts in `completeness`: `days_in_week`, `days_with_complete_data`,
+   `days_affected`, `affected_dates` and each entry's `source`. Do not count
+   days and do not subtract one count from another.
+6. Any total named in `completeness.totals_still_filling_in` is incomplete. Say
+   it is still filling in. Do not call its move a rise, a fall, a drop, a
+   recovery or an improvement, and do not explain it -- the tables are not in
+   yet.
+7. This is synthetic sample data for a brand that does not exist. Do not write
    as though it were a real company's results, and do not recommend budget
    decisions."""
 
@@ -544,8 +696,8 @@ rules are hard:
 def build_prompt(facts: dict) -> str:
     return (
         "FACTS\n"
-        + json.dumps(facts, indent=2, default=str)
-        + f"\n\nWrite the read-out for week {facts['week']['week']}."
+        + json.dumps(prompt_facts(facts), indent=2, default=str)
+        + f"\n\nWrite the read-out for week {week_number(facts)}."
     )
 
 
@@ -554,17 +706,17 @@ def retry_prompt(prompt: str, unsupported: list[str], text: str, facts: dict) ->
 
     The sentence each figure was written in goes back too: it is usually the
     sentence, not the figure, that shows what went wrong -- a count worked out
-    from a date range, a total added up by hand.
+    from a date range, a figure rewritten in another format.
     """
     return (
         prompt
         + "\n\nYour previous read-out used "
         + ", ".join(unsupported)
-        + ", which are not in the FACTS above:\n"
+        + ", which are not written that way anywhere in the FACTS above:\n"
         + "\n".join(f"  {line}" for line in offending_sentences(text, unsupported, facts))
         + "\n\nWrite the read-out again, using only figures that appear in the FACTS, "
-        "copied exactly as written there. If you need a count, quote the one in the "
-        "FACTS rather than working it out."
+        "copied character for character. If you need a figure the FACTS do not give you, "
+        "leave it out."
     )
 
 
@@ -582,7 +734,7 @@ def generate_readout(facts: dict, *, model: str | None = None) -> str:
         text = llm.complete(SYSTEM, retry_prompt(prompt, unsupported, text, facts), model=model)
         unsupported = check_numbers(text, facts)
         if unsupported:
-            raise NumberCheckError(facts["week"]["week"], unsupported, text, facts)
+            raise NumberCheckError(week_number(facts), unsupported, text, facts)
     return text
 
 
@@ -591,70 +743,101 @@ def generate_readout(facts: dict, *, model: str | None = None) -> str:
 # --------------------------------------------------------------------------
 
 
-def _money(value: float | None) -> str:
-    return "unavailable" if value is None else f"${value:,.2f}"
+def _show(node) -> str:
+    """The display string of a fact, or a dash where there is no figure."""
+    return "--" if node is None else node["display"]
 
 
-def _pct(value: float | None) -> str:
-    return "unavailable" if value is None else f"{abs(value) * 100:.1f}%"
+def _join(items: list[str]) -> str:
+    """``a``, ``a and b``, ``a, b and c``."""
+    items = list(items)
+    if len(items) <= 2:
+        return " and ".join(items)
+    return ", ".join(items[:-1]) + " and " + items[-1]
 
 
 def template_readout(facts: dict) -> str:
     """A read-out assembled in Python, for tests and for --dry-run.
 
-    Built from the same facts and held to the same number check, so it stays
-    honest about what the facts can support.
+    Built from the same facts, in the same order the model is asked for, and
+    held to the same number check -- so it stays honest about what the facts
+    can support, and about what they cannot.
     """
-    week, totals = facts["week"], facts["totals"]
-    parts = [
-        f"Week {week['week']} ({week['week_start']} to {week['week_end']}), "
-        f"{facts['brand']}. Template read-out: no model was called."
-    ]
+    week, completeness = facts["week"], facts["completeness"]
+    flags, filling_in = facts["anomalies"]["flags"], completeness["totals_still_filling_in"]
 
-    change = facts["change_vs_prior_week"]
-    if change:
-        revenue, spend = change["shopify_revenue"], change["ad_spend"]
+    parts = [f"Week {_show(week['number'])} ({week['week_start']} to {week['week_end']}), {facts['brand']}."]
+
+    # (a) what was flagged, and what is missing
+    if flags:
+        flag = flags[0]
         parts.append(
-            f"Store revenue was {_money(totals['shopify_revenue'])}, "
-            f"{revenue['direction']} {_pct(revenue['pct'])} on the prior week, "
-            f"on ad spend of {_money(totals['ad_spend'])}, {spend['direction']} {_pct(spend['pct'])}."
+            f"{flag['channel']}'s {flag['metric_label']} was flagged {flag['direction']} "
+            f"{_show(flag['pct_change'])} against its trailing median, to {_show(flag['value'])}, "
+            f"{_show(flag['share_of_move'])} of it from ad set {flag['ad_set']}."
         )
-        largest = (facts["drivers"] or {}).get("platform_attributed_revenue", {}).get("largest")
-        if largest:
-            parts.append(
-                f"{largest['channel']} moved attributed revenue most, by "
-                f"{_money(abs(largest['change']))}."
-            )
     else:
-        parts.append(f"Store revenue was {_money(totals['shopify_revenue'])}.")
+        parts.append("Nothing was flagged this week.")
 
-    flag = next(iter(facts["anomalies"]), None)
-    if flag:
-        parts.append(
-            f"{flag['channel']}'s {flag['metric_label']} was flagged "
-            f"{flag['direction']} {_pct(flag['pct_change'])} against its trailing median, "
-            f"most of it from ad set {flag['ad_set']}."
-        )
-
-    outside = [LABELS[name] for name, band in facts["normal_range"].items() if band.get("outside_normal_range")]
-    parts.append(
-        f"Outside its trailing {TRAILING_WEEKS}-week range: {', '.join(outside)}."
-        if outside
-        else f"Every headline figure sits inside its trailing {TRAILING_WEEKS}-week range."
-    )
-
-    completeness = facts["completeness"]
     if not completeness["complete"]:
-        sources = sorted({a["source"] for a in completeness["affected"]})
-        # Every count here is read out of the facts. Writing "7 - 2" in Python
-        # would be the same mistake the model is forbidden to make.
+        sources = completeness["affected_sources"]
         parts.append(
-            f"Data is incomplete: {' and '.join(sources)} cover "
-            f"{completeness['days_with_complete_data']} of the week's "
-            f"{completeness['days_in_week']} days, with "
-            f"{completeness['days_affected']} still filling in "
-            f"({' and '.join(completeness['affected_dates'])})."
+            f"{_join(sources)} {'covers' if len(sources) == 1 else 'cover'} "
+            f"{_show(completeness['days_with_complete_data'])} of the week's "
+            f"{_show(completeness['days_in_week'])} days -- "
+            f"{_join(completeness['affected_dates'])} are "
+            f"{_join(sorted({a['label'] for a in completeness['affected']}))} -- "
+            + (
+                f"so {_join(filling_in_labels)} are incomplete."
+                if (filling_in_labels := completeness["totals_still_filling_in_labels"])
+                else "which leaves the headline totals unaffected."
+            )
         )
+
+    # (b) the over-claim ratio
+    over_claim = facts["over_claim"]
+    if over_claim["still_filling_in"]:
+        parts.append(
+            f"The over-claim ratio stands at {_show(over_claim['ratio'])} on the rows in so far."
+        )
+    else:
+        parts.append(
+            f"The platforms claimed {_show(over_claim['platform_attributed_revenue'])} against "
+            f"{_show(over_claim['shopify_revenue'])} of store revenue, a ratio of "
+            f"{_show(over_claim['ratio'])}."
+        )
+
+    # (c) the channel behind most of the change
+    driver = (facts["drivers"] or {}).get("platform_attributed_revenue")
+    if driver and driver["largest"]:
+        largest = driver["largest"]
+        if driver["still_filling_in"]:
+            # Not "moved most": the tables are not in, so there is no move yet.
+            parts.append(
+                f"{largest['channel']} accounts for most of the difference against last week, "
+                f"{_show(largest['change'])}, on tables still filling in."
+            )
+        else:
+            # A share over 100% is real -- channels pulling against each other --
+            # but "285.2% of the change" explains nothing, so it is left to the
+            # facts rather than written into a sentence.
+            share = largest["share_of_change"]
+            within = share is not None and abs(share["value"]) <= 1.0
+            parts.append(
+                f"{largest['channel']} moved attributed revenue most, {largest['direction']} "
+                f"{_show(largest['change'])}" + (f", {_show(share)} of the change." if within else ".")
+            )
+
+    # the holdout, if one was running
+    for holdout in facts["holdouts"]["running"][:1]:
+        parts.append(
+            f"The {holdout['channel']} holdout ({holdout['window_start']} to "
+            f"{holdout['window_end']}) measured incremental ROAS of "
+            f"{_show(holdout['incremental_roas'])} against a reported "
+            f"{_show(holdout['reported_roas_in_window'])}."
+        )
+
+    parts.append("Template read-out: no model was called.")
     return " ".join(parts)
 
 
@@ -665,7 +848,7 @@ def template_readout(facts: dict) -> str:
 
 def readout_record(facts: dict, text: str, model: str | None, dry_run: bool) -> dict:
     return {
-        "week": facts["week"]["week"],
+        "week": week_number(facts),
         "week_start": facts["week"]["week_start"],
         "week_end": facts["week"]["week_end"],
         "brand": facts["brand"],
@@ -719,7 +902,11 @@ def main(argv: list[str] | None = None) -> int:
     weeks = analysis.weeks[-args.weeks :]
     model = None if args.dry_run else llm.model_id(args.model)
 
-    print(f"{len(weeks)} week(s): {weeks[0]} to {weeks[-1]}" + ("  [dry run, no API calls]" if args.dry_run else f"  [{model}]"), flush=True)
+    print(
+        f"{len(weeks)} week(s): {weeks[0]} to {weeks[-1]}"
+        + ("  [dry run, no API calls]" if args.dry_run else f"  [{model}]"),
+        flush=True,
+    )
 
     failed: list[int] = []
     for week in weeks:

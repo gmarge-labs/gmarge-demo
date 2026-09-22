@@ -169,7 +169,7 @@ def weekly_metrics(
 # --------------------------------------------------------------------------
 
 
-def modified_z_score(trailing: pd.Series, value: float) -> tuple[float, float, float]:
+def _robust(trailing: pd.Series, value: float) -> tuple[float, float, float]:
     """``(score, median, mad)`` -- the modified z-score of ``value``.
 
     ``0.6745 * (x - median) / MAD`` puts the score on the same footing as a
@@ -202,7 +202,7 @@ def robust_scores(
                 value = series.loc[week]
                 if len(trailing) < trailing_weeks or not np.isfinite(value):
                     continue
-                score, median, mad = modified_z_score(trailing, float(value))
+                score, median, mad = _robust(trailing, float(value))
                 rows.append(
                     {
                         "channel": channel,

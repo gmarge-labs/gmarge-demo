@@ -237,31 +237,43 @@ python -m gmarge.analyst --weeks 8            # writes readouts/week-NN.json
 python -m gmarge.analyst --weeks 8 --dry-run  # no API call at all
 ```
 
-The model does not see the data. For each week, `build_facts()` computes every
-number the read-out is allowed to use — the week's totals, the move against the
-prior week, each channel's share of that move, the trailing 8-week band that
-says whether the week is outside its normal range, the week's anomalies and any
-quality finding that overlaps it — and hands them over as JSON. The model is
-asked for at most 120 words of prose: what changed, what caused most of it,
-whether it is outside the normal range, and what is missing if the week's data
-is incomplete.
+The model does not see the data, and it does not see a single number it could
+get wrong. For each week `build_facts()` computes the facts and **formats**
+them: every number is a `{value, display}` pair, the value for audit and the
+display for the read-out. `$531.6k`, `1.42x`, `39.2%` are decided in Python.
+`prompt_facts()` then strips the values, so what reaches the model is display
+strings and labels — there is no raw float in the prompt to round, rescale or
+mistype, and the check holds the reply to those strings character for
+character. `$531,637.44`, `$532k` and `0.5m` all fail.
 
-Incompleteness gets its own counts, because a week that is partly missing is
-the one place a model is tempted to do arithmetic: how much of week 26 reported
-is a subtraction, and a subtraction is exactly what it is not allowed to make.
-So `completeness` carries the days in the week, the days with complete data,
-the days affected and the affected dates themselves, and the prompt says to
-describe incompleteness with those counts and never to count or subtract days.
+The read-out is asked for in a fixed order: anything flagged or missing first,
+then the over-claim ratio and what it means this week, then the channel behind
+most of the change, then one sentence on any geo holdout whose window covers
+the week — the only incremental figure in the facts, and labelled as the
+window's result rather than the week's.
 
-Then the reply is checked. Every figure in it is extracted and traced back to a
-value in the facts: a figure may be written to fewer decimal places, a ratio may
-be written as a percentage, and a name from the facts may be quoted with the
-digits it carries. Nothing else passes. A reply that fails is sent back once
-with the offending figures named; if the second reply also fails, **nothing is
-saved** and the week is reported as an error. A failure prints each offending
-figure with the sentence it was written in — `6` on its own says nothing, `'6'
-in: only 6 of 7 days reported` says the model was counting days — so a failure
-can be diagnosed without running it again.
+**One source of truth for "normal".** Whether a week is outside its normal
+range is `gmarge/anomalies.py`'s verdict and nobody else's. The analyst scores
+nothing and computes no band of its own; it passes on the flags raised for that
+week. A week with a flag leads with it and cannot be called normal, and a week
+without one says nothing was flagged — which is not the same as saying
+everything is fine.
+
+**An incomplete week gets no verdict.** When a table is still filling in, every
+total that draws on it is listed in `completeness.totals_still_filling_in` and
+must be described as incomplete rather than as a rise or a fall. Week 26's ad
+spend is two days short, so its spend, attributed revenue and over-claim ratio
+are reported as still filling in; the week 8 GA4 gap touches no headline total,
+and says so. The counts come with it — days in the week, days with complete
+data, days affected, the affected dates — because a count worked out from a
+date range is a count nobody checked.
+
+A reply that fails the check is sent back once with the offending figures
+named; if the second reply also fails, **nothing is saved** and the week is
+reported as an error. A failure prints each figure with the sentence it was
+written in — `6` on its own says nothing, `'6' in: only 6 of 7 days reported`
+says the model was counting days — so a failure can be diagnosed without
+running it again.
 
 Each file holds the text, the facts it was written from, the model id and a
 timestamp, so a reviewer can check the prose against the numbers it came from.
@@ -271,7 +283,7 @@ generation and commit, and it is not optional.
 `--dry-run` writes the same file with a read-out assembled in Python instead,
 and `model: null`. The tests use only that path: no key, no network, no model.
 It doubles as a check on the facts — if the template cannot be written from the
-facts alone, neither can the model.
+facts alone, in the order asked for, neither can the model.
 
 ## Tests
 

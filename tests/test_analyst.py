@@ -1,10 +1,15 @@
-"""The facts must carry the read-out, and the number check must bite.
+"""The facts must carry the read-out, and the read-out must not outrun them.
 
-Every test here runs with ``--dry-run``: no API key, no network, no model.
-That is the point of the dry run -- the template read-out is assembled from
-the same facts dict the model is given and held to the same number check, so
-these tests prove the facts are sufficient and the check is honest without
-anything leaving the machine.
+Every test here runs with ``--dry-run``: no API key, no network, no model. The
+template read-out is assembled from the same facts the model is given, in the
+same order, and held to the same number check, so these tests prove the facts
+are sufficient and the check is honest without anything leaving the machine.
+
+Three properties are what this file is really about:
+
+* every number is formatted in Python, and the model is shown nothing else;
+* "outside the normal range" comes from the anomaly scan and nowhere else;
+* a week whose tables are still filling in gets no verdict about its totals.
 """
 
 from __future__ import annotations
@@ -16,7 +21,12 @@ import pytest
 
 from gmarge import analyst as an
 from gmarge import llm
-from gmarge import metrics as mx
+
+# Anything here in the facts would be this module holding a second opinion on
+# what "normal" means. There is only one, and it is the anomaly scan's.
+BANNED_KEYS = ("normal_range", "robust_score", "score_threshold", "enough_history", "band")
+
+RISE_AND_FALL = ("rose", "fell", "rise", "fall", "drop", "increase", "decrease", "recovered")
 
 
 @pytest.fixture(scope="session")
@@ -33,13 +43,43 @@ def facts_for(analysis, week):
     return an.build_facts(analysis, week)
 
 
+def _keys(node, found=None):
+    found = set() if found is None else found
+    if isinstance(node, dict):
+        found.update(node)
+        for value in node.values():
+            _keys(value, found)
+    elif isinstance(node, list):
+        for value in node:
+            _keys(value, found)
+    return found
+
+
+def _leaves(node, found=None):
+    """Every non-string scalar in a structure, for the no-raw-numbers check."""
+    found = [] if found is None else found
+    if isinstance(node, dict):
+        for value in node.values():
+            _leaves(value, found)
+    elif isinstance(node, list):
+        for value in node:
+            _leaves(value, found)
+    elif not isinstance(node, (str, bool)) and node is not None:
+        found.append(node)
+    return found
+
+
+def _flagged_week(analysis):
+    return next(a.week for a in analysis.anomalies)
+
+
 # --------------------------------------------------------------------------
 # 1. The facts carry the read-out
 # --------------------------------------------------------------------------
 
 
 def test_template_readout_uses_only_facts(analysis):
-    """Every figure in every template read-out traces back to its facts."""
+    """Every figure in every template read-out is a display string in its facts."""
     for week in analysis.weeks:
         facts = facts_for(analysis, week)
         text = an.template_readout(facts)
@@ -48,13 +88,12 @@ def test_template_readout_uses_only_facts(analysis):
 
 def test_template_readout_is_within_the_word_limit(analysis):
     for week in analysis.weeks:
-        text = an.template_readout(facts_for(analysis, week))
-        assert an.word_count(text) <= an.WORD_LIMIT
+        assert an.word_count(an.template_readout(facts_for(analysis, week))) <= an.WORD_LIMIT
 
 
 def test_facts_are_json_serialisable(analysis, last_week):
     facts = facts_for(analysis, last_week)
-    assert json.loads(json.dumps(facts, default=str))["week"]["week"] == last_week
+    assert an.week_number(json.loads(json.dumps(facts, default=str))) == last_week
 
 
 def test_unknown_week_is_refused(analysis):
@@ -63,71 +102,217 @@ def test_unknown_week_is_refused(analysis):
 
 
 # --------------------------------------------------------------------------
-# 2. The numbers in the facts are the numbers in the tables
+# 2. Python formats every number; the model sees displays and nothing else
 # --------------------------------------------------------------------------
 
 
-def test_totals_match_the_weekly_reconciliation(analysis, last_week):
-    facts = facts_for(analysis, last_week)
-    row = analysis.metrics["weekly_reconciliation"].set_index("week").loc[last_week]
-
-    assert facts["totals"]["shopify_revenue"] == pytest.approx(row["shopify_revenue"], abs=0.005)
-    assert facts["totals"]["ad_spend"] == pytest.approx(row["ad_spend"], abs=0.005)
-    assert facts["totals"]["over_claim_ratio"] == pytest.approx(row["over_claim_ratio"], abs=5e-5)
-    assert facts["week"]["week_start"] == str(row["week_start"].date())
+@pytest.mark.parametrize(
+    "value,expected",
+    [(14_900, "$14.9k"), (531_637.44, "$531.6k"), (1_234_567.0, "$1.2m"), (532.49, "$532"), (-19_328.74, "$19.3k")],
+)
+def test_money_is_written_one_way(value, expected):
+    assert an.money_display(value) == expected
 
 
-def test_change_is_this_week_against_last(analysis, last_week):
-    facts = facts_for(analysis, last_week)
-    prior = facts_for(analysis, last_week - 1)
-
-    for key in ("shopify_revenue", "ad_spend", "platform_attributed_revenue"):
-        expected = facts["totals"][key] - prior["totals"][key]
-        assert facts["change_vs_prior_week"][key]["absolute"] == pytest.approx(expected, abs=0.02)
-    assert facts["prior_week_totals"]["ad_spend"] == prior["totals"]["ad_spend"]
+@pytest.mark.parametrize("value,expected", [(1.3704, "1.37x"), (5.2496, "5.25x"), (-1.5, "1.50x")])
+def test_ratios_are_written_one_way(value, expected):
+    assert an.ratio_display(value) == expected
 
 
-def test_channel_changes_sum_to_the_total_change(analysis, last_week):
-    facts = facts_for(analysis, last_week)
-    for column, driver in facts["drivers"].items():
-        total = sum(c["change"] for c in driver["channels"])
-        assert total == pytest.approx(driver["total_change"], abs=0.05)
-        assert abs(driver["largest"]["change"]) == max(abs(c["change"]) for c in driver["channels"])
+@pytest.mark.parametrize("value,expected", [(0.1216, "12.2%"), (-0.1216, "12.2%"), (0.392, "39.2%")])
+def test_percentages_are_written_to_one_decimal_place(value, expected):
+    assert an.pct_display(value) == expected
 
 
-def test_first_week_has_no_prior_week_and_no_band(analysis):
-    facts = facts_for(analysis, analysis.weeks[0])
-    assert facts["prior_week"] is None
-    assert facts["change_vs_prior_week"] is None
-    assert facts["drivers"] is None
-    assert facts["normal_range"]["ad_spend"]["enough_history"] is False
+def test_a_fact_carries_both_the_value_and_the_display():
+    entry = an.fact(531_637.44, an.MONEY)
+    assert entry == {"value": 531_637.44, "display": "$531.6k"}
+    assert an.fact(None, an.MONEY) is None
+    assert an.fact(float("inf"), an.RATIO) is None
+
+
+def test_every_number_in_the_facts_carries_a_display(analysis):
+    for week in analysis.weeks:
+        for key, node in _pairs(facts_for(analysis, week)):
+            assert isinstance(node["display"], str) and node["display"], key
+
+
+def _pairs(node, path="", found=None):
+    """Every ``{value, display}`` fact in the structure, with its path."""
+    found = [] if found is None else found
+    if isinstance(node, dict):
+        if set(node) == {"value", "display"}:
+            found.append((path, node))
+        else:
+            for key, value in node.items():
+                _pairs(value, f"{path}.{key}", found)
+    elif isinstance(node, list):
+        for i, value in enumerate(node):
+            _pairs(value, f"{path}[{i}]", found)
+    return found
+
+
+def test_the_prompt_contains_no_raw_numbers(analysis):
+    """The model cannot round, rescale or mistype a float it was never given."""
+    for week in analysis.weeks:
+        facts = facts_for(analysis, week)
+        shown = an.prompt_facts(facts)
+
+        assert _leaves(shown) == [], f"week {week}: raw numbers reached the prompt"
+        assert _leaves(facts), "the saved facts should still carry values for audit"
+
+        # the prompt shows the display and not the value it was rounded from
+        revenue = facts["totals"]["shopify_revenue"]
+        prompt = an.build_prompt(facts)
+        assert revenue["display"] in prompt
+        assert str(revenue["value"]) not in prompt
+
+
+def test_the_prompt_withholds_text_written_by_another_module(analysis):
+    """Descriptions carry figures in another format; the reviewer keeps them."""
+    week = _flagged_week(analysis)
+    facts = facts_for(analysis, week)
+
+    assert facts["anomalies"]["flags"][0]["description"]
+    assert "description" not in _keys(an.prompt_facts(facts))
 
 
 # --------------------------------------------------------------------------
-# 3. Findings and flags land in the week they belong to
+# 3. One source of truth for "normal"
+# --------------------------------------------------------------------------
+
+
+def test_the_facts_hold_no_band_of_their_own(analysis):
+    """No level-based range, no robust score -- the scan is the only verdict."""
+    for week in analysis.weeks:
+        keys = _keys(facts_for(analysis, week))
+        assert not [k for k in keys if any(banned in k for banned in BANNED_KEYS)]
+
+
+def test_a_flagged_week_carries_its_flag_and_claims_nothing_normal(analysis):
+    """Week 20's frequency flag is in the facts, and nothing says the week was fine."""
+    week = next(a.week for a in analysis.anomalies if a.metric == "frequency")
+    facts = facts_for(analysis, week)
+    flags = facts["anomalies"]["flags"]
+
+    assert facts["anomalies"]["n_flags"]["value"] == len(flags) >= 1
+    flag = next(f for f in flags if f["metric"] == "frequency")
+    assert flag["channel"] and flag["pct_change"]["display"].endswith("%")
+    assert flag["ad_set"] and flag["share_of_move"]["display"].endswith("%")
+
+    text = an.template_readout(facts).lower()
+    assert "nothing was flagged" not in text
+    assert "normal" not in text and "every metric" not in text
+
+
+def test_a_flagged_week_leads_with_the_flag(analysis):
+    week = _flagged_week(analysis)
+    facts = facts_for(analysis, week)
+    text = an.template_readout(facts)
+    flag = facts["anomalies"]["flags"][0]
+
+    assert text.index("flagged") < text.index("claimed")
+    assert text.index(flag["channel"]) < text.index("claimed")
+    assert text.index(flag["metric_label"]) < text.index("claimed")
+
+
+def test_an_unflagged_week_says_so_without_calling_the_week_fine(analysis):
+    flagged = {a.week for a in analysis.anomalies}
+    week = next(w for w in analysis.weeks if w not in flagged)
+    facts = facts_for(analysis, week)
+
+    assert facts["anomalies"]["flags"] == []
+    assert facts["anomalies"]["n_flags"]["value"] == 0
+
+    text = an.template_readout(facts).lower()
+    assert "nothing was flagged" in text
+    assert "normal" not in text and "fine" not in text and "healthy" not in text
+
+
+def test_every_flag_from_the_scan_reaches_its_week(analysis):
+    for flag in analysis.anomalies:
+        flags = facts_for(analysis, flag.week)["anomalies"]["flags"]
+        assert any(f["channel"] == flag.channel and f["metric"] == flag.metric for f in flags)
+
+
+# --------------------------------------------------------------------------
+# 4. Order: anomaly or data issue, then over-claim, then the driver
+# --------------------------------------------------------------------------
+
+
+def test_the_readout_leads_with_what_matters(analysis):
+    for week in analysis.weeks:
+        facts = facts_for(analysis, week)
+        text = an.template_readout(facts)
+        if not facts["drivers"]:
+            continue
+
+        over_claim = text.index("claimed") if "claimed" in text else text.index("over-claim ratio")
+        driver = text.index(facts["drivers"]["platform_attributed_revenue"]["largest"]["channel"], over_claim)
+        assert text.index("flagged") < over_claim < driver
+
+
+def test_a_holdout_covering_the_week_is_in_the_facts(analysis):
+    """Only a holdout says what a channel is worth, so the week it covers gets it."""
+    weeks_with_holdouts = 0
+    for week in analysis.weeks:
+        facts = facts_for(analysis, week)
+        running = facts["holdouts"]["running"]
+        assert facts["holdouts"]["n_running"]["value"] == len(running)
+
+        for holdout in running:
+            assert holdout["window_start"] <= facts["week"]["week_end"]
+            assert holdout["window_end"] >= facts["week"]["week_start"]
+            assert holdout["incremental_roas"]["display"].endswith("x")
+            assert holdout["reported_roas_in_window"]["display"].endswith("x")
+        if running:
+            weeks_with_holdouts += 1
+            assert running[0]["channel"] in an.template_readout(facts)
+    assert weeks_with_holdouts, "this dataset should have weeks a holdout covers"
+
+
+def test_a_week_no_holdout_covers_claims_no_incremental_roas(analysis):
+    holdouts = analysis.metrics["holdouts"]
+    latest = max(h.date().isoformat() for h in holdouts["end_date"])
+    week = next(w for w in analysis.weeks if facts_for(analysis, w)["week"]["week_start"] > latest)
+    facts = facts_for(analysis, week)
+
+    assert facts["holdouts"]["running"] == []
+    assert "incremental ROAS" not in an.template_readout(facts)
+
+
+# --------------------------------------------------------------------------
+# 5. An incomplete week gets no verdict
 # --------------------------------------------------------------------------
 
 
 def _week_of(analysis, date: str) -> int:
     weekly = analysis.metrics["weekly_reconciliation"]
-    hit = weekly[(weekly["week_start"].astype(str).str[:10] <= date) & (weekly["week_end"].astype(str).str[:10] >= date)]
+    hit = weekly[
+        (weekly["week_start"].astype(str).str[:10] <= date) & (weekly["week_end"].astype(str).str[:10] >= date)
+    ]
     return int(hit.iloc[0]["week"])
 
 
-def test_quality_findings_land_in_their_own_week(analysis):
-    for finding in analysis.findings:
-        week = _week_of(analysis, finding.start_date)
-        checks = [f["check"] for f in facts_for(analysis, week)["quality_findings"]]
-        assert finding.check in checks
+@pytest.mark.parametrize("check", an.INCOMPLETE_CHECKS)
+def test_an_incomplete_week_carries_every_day_count(analysis, check):
+    """The counts are in the facts, so nothing has to be worked out."""
+    finding = next((f for f in analysis.findings if f.check == check), None)
+    if finding is None:
+        pytest.skip(f"this dataset has no {check} finding")
 
+    facts = facts_for(analysis, _week_of(analysis, finding.start_date))
+    completeness = facts["completeness"]
 
-def test_the_reporting_lag_makes_its_week_incomplete(analysis):
-    lag = next(f for f in analysis.findings if f.check == "reporting_lag")
-    facts = facts_for(analysis, _week_of(analysis, lag.start_date))
-
-    assert facts["completeness"]["complete"] is False
-    assert lag.source in {a["source"] for a in facts["completeness"]["affected"]}
-    assert "incomplete" in an.template_readout(facts).lower()
+    assert completeness["complete"] is False
+    assert completeness["days_in_week"]["value"] == facts["week"]["days"]["value"]
+    assert completeness["days_affected"]["value"] == len(completeness["affected_dates"])
+    assert (
+        completeness["days_with_complete_data"]["value"] + completeness["days_affected"]["value"]
+        == completeness["days_in_week"]["value"]
+    )
+    assert set(finding.dates) & set(completeness["affected_dates"])
+    assert finding.source in completeness["affected_sources"]
 
 
 def test_a_clean_week_is_complete(analysis):
@@ -136,34 +321,43 @@ def test_a_clean_week_is_complete(analysis):
     completeness = facts_for(analysis, clean)["completeness"]
 
     assert completeness["complete"] is True
-    assert completeness["days_affected"] == 0
-    assert completeness["affected_dates"] == []
-    assert completeness["days_with_complete_data"] == completeness["days_in_week"]
+    assert completeness["days_affected"]["value"] == 0
+    assert completeness["totals_still_filling_in"] == []
 
 
-@pytest.mark.parametrize("check", an.INCOMPLETE_CHECKS)
-def test_an_incomplete_week_carries_every_day_count(analysis, check):
-    """The counts a read-out needs are in the facts, so nothing has to be worked out.
+def test_only_totals_drawn_from_an_incomplete_table_are_held_back(analysis):
+    """A GA4 gap does not make store revenue incomplete, and must not say it does."""
+    lag = next(f for f in analysis.findings if f.check == "reporting_lag")
+    lagged = facts_for(analysis, _week_of(analysis, lag.start_date))["completeness"]
 
-    Without these the model has to subtract for itself to say how much of the
-    week reported -- which is exactly the arithmetic it is not allowed to do.
-    """
-    finding = next((f for f in analysis.findings if f.check == check), None)
-    if finding is None:
-        pytest.skip(f"this dataset has no {check} finding")
+    assert "ad_spend" in lagged["affected_sources"]
+    assert set(lagged["totals_still_filling_in"]) == {
+        key for key, tables in an.TOTAL_SOURCES.items() if "ad_spend" in tables
+    }
+    assert "shopify_revenue" not in lagged["totals_still_filling_in"]
 
-    facts = facts_for(analysis, _week_of(analysis, finding.start_date))
-    completeness = facts["completeness"]
+    gap = next((f for f in analysis.findings if f.check == "missing_days"), None)
+    if gap is not None and gap.source == "ga4_sessions":
+        facts = facts_for(analysis, _week_of(analysis, gap.start_date))
+        assert facts["completeness"]["complete"] is False
+        assert facts["completeness"]["totals_still_filling_in"] == []
+        assert "unaffected" in an.template_readout(facts)
 
-    assert completeness["days_in_week"] == facts["week"]["days"]
-    assert completeness["days_affected"] == len(completeness["affected_dates"])
-    assert (
-        completeness["days_with_complete_data"] + completeness["days_affected"]
-        == completeness["days_in_week"]
-    )
-    assert set(finding.dates) & set(completeness["affected_dates"])
-    for entry in completeness["affected"]:
-        assert entry["n_days_in_week"] == len(entry["dates_in_week"])
+
+def test_an_incomplete_total_is_never_called_a_rise_or_a_fall(analysis):
+    lag = next(f for f in analysis.findings if f.check == "reporting_lag")
+    facts = facts_for(analysis, _week_of(analysis, lag.start_date))
+    text = an.template_readout(facts).lower()
+
+    assert facts["completeness"]["totals_still_filling_in"]
+    assert text.count("still filling in") >= 2
+    assert [word for word in RISE_AND_FALL if word in text] == []
+
+
+def test_the_prompt_forbids_reading_an_incomplete_total_as_a_move():
+    assert "totals_still_filling_in" in an.SYSTEM
+    assert "still filling in" in an.SYSTEM
+    assert "anomalies" in an.SYSTEM and "normal range" in an.SYSTEM
 
 
 def test_findings_carry_the_days_that_fall_inside_the_week(analysis):
@@ -171,41 +365,12 @@ def test_findings_carry_the_days_that_fall_inside_the_week(analysis):
         facts = facts_for(analysis, week)
         start, end = facts["week"]["week_start"], facts["week"]["week_end"]
         for finding in facts["quality_findings"]:
-            assert finding["n_days_in_week"] == len(finding["dates_in_week"])
-            assert finding["n_days_in_week"] >= 1
+            assert finding["n_days_in_week"]["value"] == len(finding["dates_in_week"])
             assert all(start <= day <= end for day in finding["dates_in_week"])
 
 
-def test_a_day_count_the_model_worked_out_itself_is_caught(analysis):
-    """The fix is more facts, not a looser check: an unquotable count still fails."""
-    lag = next(f for f in analysis.findings if f.check == "reporting_lag")
-    facts = facts_for(analysis, _week_of(analysis, lag.start_date))
-    completeness = facts["completeness"]
-
-    quoted = (
-        f"{completeness['days_with_complete_data']} of the week's "
-        f"{completeness['days_in_week']} days reported."
-    )
-    assert an.check_numbers(quoted, facts) == []
-
-    invented = next(
-        str(n) for n in range(2, 200) if an.check_numbers(f"{n} days reported.", facts)
-    )
-    assert an.check_numbers(f"Only {invented} of the week's days reported.", facts) == [invented]
-
-
-def test_anomalies_land_in_their_own_week(analysis):
-    for flag in analysis.anomalies:
-        facts = facts_for(analysis, flag.week)
-        assert any(a["channel"] == flag.channel and a["metric"] == flag.metric for a in facts["anomalies"])
-    weeks_with_flags = {a.week for a in analysis.anomalies}
-    for week in analysis.weeks:
-        if week not in weeks_with_flags:
-            assert facts_for(analysis, week)["anomalies"] == []
-
-
 # --------------------------------------------------------------------------
-# 4. The number check
+# 6. The number check: displays, exactly
 # --------------------------------------------------------------------------
 
 
@@ -214,27 +379,19 @@ def facts(analysis, last_week):
     return facts_for(analysis, last_week)
 
 
+def test_a_display_string_passes(facts):
+    revenue = facts["totals"]["shopify_revenue"]["display"]
+    assert an.check_numbers(f"Store revenue was {revenue}.", facts) == []
+
+
+@pytest.mark.parametrize("rewritten", ["$531,637.44", "$532k", "$0.5m", "531.6", "$531.60k"])
+def test_the_same_number_written_another_way_is_caught(facts, rewritten):
+    """There is no rounding allowance, because Python already did the rounding."""
+    assert an.check_numbers(f"Store revenue was {rewritten}.", facts) == [rewritten]
+
+
 def test_an_invented_figure_is_caught(facts):
-    text = "Store revenue was $1,234,567.89 this week."
-    assert an.check_numbers(text, facts) == ["$1,234,567.89"]
-
-
-def test_a_figure_rounded_to_the_nearest_thousand_is_caught(facts):
-    revenue = facts["totals"]["shopify_revenue"]
-    rounded = f"${round(revenue, -3):,.0f}"
-    assert an.check_numbers(f"Store revenue was {rounded}.", facts) == [rounded]
-
-
-def test_dropping_decimal_places_is_allowed(facts):
-    revenue = facts["totals"]["shopify_revenue"]
-    assert an.check_numbers(f"Store revenue was ${revenue:,.2f}.", facts) == []
-    assert an.check_numbers(f"Store revenue was ${revenue:,.0f}.", facts) == []
-
-
-def test_a_ratio_may_be_written_as_a_percentage(facts):
-    pct = facts["change_vs_prior_week"]["shopify_revenue"]["pct"]
-    assert an.check_numbers(f"Revenue moved {abs(pct) * 100:.1f}%.", facts) == []
-    assert an.check_numbers(f"Revenue moved {abs(pct) * 100 + 5:.1f}%.", facts) != []
+    assert an.check_numbers("Store revenue was $9.9m this week.", facts) == ["$9.9m"]
 
 
 def test_a_date_outside_the_facts_is_caught(facts):
@@ -243,7 +400,7 @@ def test_a_date_outside_the_facts_is_caught(facts):
 
 
 def test_a_name_from_the_facts_may_be_quoted_with_its_digits(analysis):
-    """Ad set names carry digits. Quoting one is not inventing a figure."""
+    """Ad set names carry digits. Quoting one is not writing a figure."""
     flagged = next((a for a in analysis.anomalies if any(c.isdigit() for c in a.ad_set)), None)
     if flagged is None:
         pytest.skip("no flagged ad set has a digit in its name")
@@ -252,16 +409,44 @@ def test_a_name_from_the_facts_may_be_quoted_with_its_digits(analysis):
 
 
 def test_prose_without_figures_passes(facts):
-    assert an.check_numbers("Spend fell and the platforms claimed less revenue.", facts) == []
+    assert an.check_numbers("Spend held up and the platforms claimed less.", facts) == []
+
+
+def test_a_day_count_the_model_worked_out_itself_is_caught(analysis):
+    """The fix for a bad count is more facts, not a looser check."""
+    lag = next(f for f in analysis.findings if f.check == "reporting_lag")
+    facts = facts_for(analysis, _week_of(analysis, lag.start_date))
+    completeness = facts["completeness"]
+
+    quoted = (
+        f"{completeness['days_with_complete_data']['display']} of the week's "
+        f"{completeness['days_in_week']['display']} days reported."
+    )
+    assert an.check_numbers(quoted, facts) == []
+
+    invented = next(str(n) for n in range(2, 200) if an.check_numbers(f"{n} days reported.", facts))
+    assert an.check_numbers(f"Only {invented} of the week's days reported.", facts) == [invented]
+
+
+def test_the_offending_sentence_is_named(facts):
+    text = "Spend fell sharply. Only 6 of 7 days reported. Revenue held up."
+    assert an.offending_sentences(text, ["6"], facts) == ["'6' in: Only 6 of 7 days reported."]
+
+
+def test_the_sentence_is_found_by_figure_not_by_substring(facts):
+    """``6`` lives inside ``$563.5k``-style figures; the sentence named must be the real one."""
+    text = "The week ran 2025-06-30 to 2025-07-06. Only 6 of 7 days reported."
+    assert an.check_numbers(text, facts) == ["6"]
+    assert an.offending_sentences(text, ["6"], facts) == ["'6' in: Only 6 of 7 days reported."]
 
 
 # --------------------------------------------------------------------------
-# 5. The retry, and what happens when it fails
+# 7. The retry, and what happens when it fails
 # --------------------------------------------------------------------------
 
 
 def test_a_bad_first_reply_is_retried_once(monkeypatch, facts):
-    replies = iter(["Spend held up. Revenue was $9,999,999.00.", "Revenue was flat."])
+    replies = iter(["Spend held up. Revenue was $9.9m.", "Revenue was flat."])
     prompts = []
 
     def fake_complete(system, prompt, *, model=None, **kwargs):
@@ -271,50 +456,25 @@ def test_a_bad_first_reply_is_retried_once(monkeypatch, facts):
     monkeypatch.setattr(llm, "complete", fake_complete)
     assert an.generate_readout(facts) == "Revenue was flat."
     assert len(prompts) == 2
-    assert "$9,999,999.00" in prompts[1]
-    # the sentence goes back too, not just the figure
-    assert "Revenue was $9,999,999.00." in prompts[1]
+    assert "$9.9m" in prompts[1]
+    assert "Revenue was $9.9m." in prompts[1]
     assert "Spend held up." not in prompts[1]
 
 
-def test_the_offending_sentence_is_named(facts):
-    text = "Spend fell sharply. Only 6 of 7 days reported. Revenue held up."
-    assert an.offending_sentences(text, ["6"], facts) == ["'6' in: Only 6 of 7 days reported."]
-
-
-def test_the_sentence_is_found_by_figure_not_by_substring(facts):
-    """``6`` lives inside ``$563,472.11``; the sentence named must be the real one."""
-    revenue = facts["totals"]["shopify_revenue"]
-    text = f"Store revenue was ${revenue:,.2f}. Only 6 of 7 days reported."
-
-    assert an.check_numbers(text, facts) == ["6"]
-    assert an.offending_sentences(text, ["6"], facts) == ["'6' in: Only 6 of 7 days reported."]
-
-
-def test_a_failure_reports_the_sentence_not_just_the_figure(monkeypatch, facts):
-    """A bare '6' is undiagnosable; '6' in its sentence says what went wrong."""
+def test_two_bad_replies_save_nothing(monkeypatch, facts, tmp_path):
     monkeypatch.setattr(llm, "complete", lambda *a, **k: "Spend fell. Only 6 of 7 days reported.")
 
     with pytest.raises(an.NumberCheckError) as caught:
         an.generate_readout(facts)
 
-    error = caught.value
-    assert error.unsupported == ["6"]
-    assert error.sentences == ["'6' in: Only 6 of 7 days reported."]
-    assert "Only 6 of 7 days reported." in str(error)
-
-
-def test_two_bad_replies_save_nothing(monkeypatch, facts, tmp_path):
-    monkeypatch.setattr(llm, "complete", lambda *a, **k: "Revenue was $9,999,999.00.")
-
-    with pytest.raises(an.NumberCheckError) as caught:
-        an.generate_readout(facts)
-    assert caught.value.unsupported == ["$9,999,999.00"]
+    assert caught.value.unsupported == ["6"]
+    assert caught.value.sentences == ["'6' in: Only 6 of 7 days reported."]
+    assert "Only 6 of 7 days reported." in str(caught.value)
     assert not list(tmp_path.glob("*.json"))
 
 
 # --------------------------------------------------------------------------
-# 6. The CLI, in dry-run
+# 8. The CLI, in dry-run
 # --------------------------------------------------------------------------
 
 
@@ -327,10 +487,9 @@ def test_dry_run_writes_one_file_per_week(dataset, tmp_path, capsys):
     assert len(written) == 3
 
     record = json.loads(written[-1].read_text())
-    assert record["mode"] == "dry-run"
-    assert record["model"] is None
+    assert record["mode"] == "dry-run" and record["model"] is None
     assert record["word_count"] <= record["word_limit"]
-    assert record["text"] and record["facts"]["week"]["week"] == record["week"]
+    assert an.week_number(record["facts"]) == record["week"]
     assert an.check_numbers(record["text"], record["facts"]) == []
     assert "sample" in record["disclaimer"].lower()
 
@@ -357,7 +516,7 @@ def test_more_weeks_than_the_data_has_is_capped(dataset, tmp_path, capsys):
 
 
 # --------------------------------------------------------------------------
-# 7. Configuration -- read from the environment, never echoed
+# 9. Configuration -- read from the environment, never echoed
 # --------------------------------------------------------------------------
 
 
@@ -390,3 +549,18 @@ def test_the_key_is_never_in_the_message(clean_env, monkeypatch):
     monkeypatch.setenv(llm.KEY_VARIABLE, "sk-ant-not-a-real-key")
     assert llm.have_key() is True
     assert "sk-ant-not-a-real-key" not in str(llm.model_id())
+
+
+def test_a_share_over_one_hundred_percent_is_kept_out_of_the_prose(analysis):
+    """Channels pulling against each other make a real share that explains nothing."""
+    checked = 0
+    for week in analysis.weeks:
+        facts = facts_for(analysis, week)
+        largest = (facts["drivers"] or {}).get("platform_attributed_revenue", {}).get("largest")
+        if not largest or largest["share_of_change"] is None:
+            continue
+        share = largest["share_of_change"]
+        if abs(share["value"]) > 1.0:
+            checked += 1
+            assert share["display"] not in an.template_readout(facts)
+    assert checked, "this dataset should have a week whose shares pull against each other"

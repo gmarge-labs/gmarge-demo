@@ -1,0 +1,542 @@
+{
+  "week": 22,
+  "week_start": "2025-06-02",
+  "week_end": "2025-06-08",
+  "brand": "Northfield Goods (sample brand)",
+  "disclaimer": "Synthetic sample data for a fictional brand. Not a real company, not real revenue, not any real advertiser's performance.",
+  "mode": "model",
+  "model": "claude-haiku-4-5",
+  "generated_at": "2026-09-22T15:19:26+00:00",
+  "word_count": 67,
+  "word_limit": 120,
+  "text": "Week 22 saw store revenue down $16.0k to $515.6k. Ad spend rose $8.5k, driven by Google shopping with $3.5k of the increase. Platform-attributed revenue grew $55.2k, with Meta retargeting accounting for $19.8k of that growth. Over-claimed revenue widened to $269.8k, a ratio of 1.52x: platforms between them claimed this much more than the store took. A TikTok holdout test is running with results due in week 24.",
+  "facts": {
+    "brand": "Northfield Goods (sample brand)",
+    "disclaimer": "Synthetic sample data for a fictional brand. Not a real company, not real revenue, not any real advertiser's performance.",
+    "week": {
+      "number": {
+        "value": 22.0,
+        "display": "22"
+      },
+      "week_start": "2025-06-02",
+      "week_end": "2025-06-08",
+      "days": {
+        "value": 7.0,
+        "display": "7"
+      }
+    },
+    "prior_week": {
+      "number": {
+        "value": 21.0,
+        "display": "21"
+      },
+      "week_start": "2025-05-26",
+      "week_end": "2025-06-01"
+    },
+    "data_window": {
+      "start": "2025-01-06",
+      "end": "2025-07-06",
+      "n_weeks": {
+        "value": 26.0,
+        "display": "26"
+      }
+    },
+    "anomalies": {
+      "n_flags": {
+        "value": 0.0,
+        "display": "0"
+      },
+      "flags": [],
+      "source": "the weekly anomaly scan in gmarge/anomalies.py"
+    },
+    "completeness": {
+      "complete": true,
+      "days_in_week": {
+        "value": 7.0,
+        "display": "7"
+      },
+      "days_affected": {
+        "value": 0.0,
+        "display": "0"
+      },
+      "days_with_complete_data": {
+        "value": 7.0,
+        "display": "7"
+      },
+      "affected_dates": [],
+      "affected_sources": [],
+      "affected_source_labels": [],
+      "totals_still_filling_in": [],
+      "totals_still_filling_in_labels": [],
+      "channel_figures_still_filling_in": false,
+      "affected": []
+    },
+    "quality_findings": [],
+    "over_claim": {
+      "ratio": {
+        "value": 1.5234,
+        "display": "1.52x"
+      },
+      "over_claimed_revenue": {
+        "value": 269848.43,
+        "display": "$269.8k"
+      },
+      "platform_attributed_revenue": {
+        "value": 785462.75,
+        "display": "$785.5k"
+      },
+      "shopify_revenue": {
+        "value": 515614.32,
+        "display": "$515.6k"
+      },
+      "still_filling_in": false,
+      "meaning": "The platforms between them claimed this much more revenue than the store took. A ratio above 1.00x is the same order credited more than once."
+    },
+    "totals": {
+      "shopify_revenue": {
+        "value": 515614.32,
+        "display": "$515.6k"
+      },
+      "shopify_net_revenue": {
+        "value": 484393.03,
+        "display": "$484.4k"
+      },
+      "ad_spend": {
+        "value": 147465.58,
+        "display": "$147.5k"
+      },
+      "platform_attributed_revenue": {
+        "value": 785462.75,
+        "display": "$785.5k"
+      },
+      "over_claimed_revenue": {
+        "value": 269848.43,
+        "display": "$269.8k"
+      },
+      "over_claim_ratio": {
+        "value": 1.5234,
+        "display": "1.52x"
+      },
+      "blended_reported_roas": {
+        "value": 5.3264,
+        "display": "5.33x"
+      }
+    },
+    "change_vs_prior_week": {
+      "shopify_revenue": {
+        "label": "store revenue",
+        "absolute": {
+          "value": -16023.12,
+          "display": "$16.0k"
+        },
+        "pct": {
+          "value": -0.0301,
+          "display": "3.0%"
+        },
+        "direction": "down",
+        "still_filling_in": false
+      },
+      "shopify_net_revenue": {
+        "label": "net store revenue",
+        "absolute": {
+          "value": -16847.77,
+          "display": "$16.8k"
+        },
+        "pct": {
+          "value": -0.0336,
+          "display": "3.4%"
+        },
+        "direction": "down",
+        "still_filling_in": false
+      },
+      "ad_spend": {
+        "label": "ad spend",
+        "absolute": {
+          "value": 8514.34,
+          "display": "$8.5k"
+        },
+        "pct": {
+          "value": 0.0613,
+          "display": "6.1%"
+        },
+        "direction": "up",
+        "still_filling_in": false
+      },
+      "platform_attributed_revenue": {
+        "label": "platform-attributed revenue",
+        "absolute": {
+          "value": 55230.36,
+          "display": "$55.2k"
+        },
+        "pct": {
+          "value": 0.0756,
+          "display": "7.6%"
+        },
+        "direction": "up",
+        "still_filling_in": false
+      },
+      "over_claimed_revenue": {
+        "label": "over-claimed revenue",
+        "absolute": {
+          "value": 71253.48,
+          "display": "$71.3k"
+        },
+        "pct": {
+          "value": 0.3588,
+          "display": "35.9%"
+        },
+        "direction": "up",
+        "still_filling_in": false
+      },
+      "over_claim_ratio": {
+        "label": "over-claim ratio",
+        "absolute": {
+          "value": 0.1498,
+          "display": "0.15x"
+        },
+        "pct": {
+          "value": 0.1091,
+          "display": "10.9%"
+        },
+        "direction": "up",
+        "still_filling_in": false
+      },
+      "blended_reported_roas": {
+        "label": "blended reported ROAS",
+        "absolute": {
+          "value": 0.0711,
+          "display": "0.07x"
+        },
+        "pct": {
+          "value": 0.0135,
+          "display": "1.4%"
+        },
+        "direction": "up",
+        "still_filling_in": false
+      }
+    },
+    "channels": [
+      {
+        "channel": "Meta prospecting",
+        "spend": {
+          "value": 41235.68,
+          "display": "$41.2k"
+        },
+        "platform_attributed_revenue": {
+          "value": 144509.09,
+          "display": "$144.5k"
+        },
+        "reported_roas": {
+          "value": 3.5045,
+          "display": "3.50x"
+        },
+        "ad_spend_change": {
+          "value": -1033.82,
+          "display": "$1.0k"
+        },
+        "ad_spend_direction": "down",
+        "platform_attributed_revenue_change": {
+          "value": -4373.15,
+          "display": "$4.4k"
+        },
+        "platform_attributed_revenue_direction": "down"
+      },
+      {
+        "channel": "Google shopping",
+        "spend": {
+          "value": 39763.08,
+          "display": "$39.8k"
+        },
+        "platform_attributed_revenue": {
+          "value": 197571.08,
+          "display": "$197.6k"
+        },
+        "reported_roas": {
+          "value": 4.9687,
+          "display": "4.97x"
+        },
+        "ad_spend_change": {
+          "value": 3523.0,
+          "display": "$3.5k"
+        },
+        "ad_spend_direction": "up",
+        "platform_attributed_revenue_change": {
+          "value": 16986.49,
+          "display": "$17.0k"
+        },
+        "platform_attributed_revenue_direction": "up"
+      },
+      {
+        "channel": "Google branded search",
+        "spend": {
+          "value": 26665.71,
+          "display": "$26.7k"
+        },
+        "platform_attributed_revenue": {
+          "value": 213968.75,
+          "display": "$214.0k"
+        },
+        "reported_roas": {
+          "value": 8.0241,
+          "display": "8.02x"
+        },
+        "ad_spend_change": {
+          "value": 2329.97,
+          "display": "$2.3k"
+        },
+        "ad_spend_direction": "up",
+        "platform_attributed_revenue_change": {
+          "value": 18100.11,
+          "display": "$18.1k"
+        },
+        "platform_attributed_revenue_direction": "up"
+      },
+      {
+        "channel": "Meta retargeting",
+        "spend": {
+          "value": 21782.39,
+          "display": "$21.8k"
+        },
+        "platform_attributed_revenue": {
+          "value": 153838.67,
+          "display": "$153.8k"
+        },
+        "reported_roas": {
+          "value": 7.0625,
+          "display": "7.06x"
+        },
+        "ad_spend_change": {
+          "value": 2622.26,
+          "display": "$2.6k"
+        },
+        "ad_spend_direction": "up",
+        "platform_attributed_revenue_change": {
+          "value": 19786.95,
+          "display": "$19.8k"
+        },
+        "platform_attributed_revenue_direction": "up"
+      },
+      {
+        "channel": "TikTok",
+        "spend": {
+          "value": 18018.72,
+          "display": "$18.0k"
+        },
+        "platform_attributed_revenue": {
+          "value": 75575.16,
+          "display": "$75.6k"
+        },
+        "reported_roas": {
+          "value": 4.1943,
+          "display": "4.19x"
+        },
+        "ad_spend_change": {
+          "value": 1072.93,
+          "display": "$1.1k"
+        },
+        "ad_spend_direction": "up",
+        "platform_attributed_revenue_change": {
+          "value": 4729.96,
+          "display": "$4.7k"
+        },
+        "platform_attributed_revenue_direction": "up"
+      }
+    ],
+    "drivers": {
+      "ad_spend": {
+        "label": "ad spend",
+        "total_change": {
+          "value": 8514.34,
+          "display": "$8.5k"
+        },
+        "direction": "up",
+        "still_filling_in": false,
+        "channels": [
+          {
+            "channel": "Google shopping",
+            "change": {
+              "value": 3523.0,
+              "display": "$3.5k"
+            },
+            "direction": "up",
+            "share_of_change": {
+              "value": 0.4138,
+              "display": "41.4%"
+            }
+          },
+          {
+            "channel": "Meta retargeting",
+            "change": {
+              "value": 2622.26,
+              "display": "$2.6k"
+            },
+            "direction": "up",
+            "share_of_change": {
+              "value": 0.308,
+              "display": "30.8%"
+            }
+          },
+          {
+            "channel": "Google branded search",
+            "change": {
+              "value": 2329.97,
+              "display": "$2.3k"
+            },
+            "direction": "up",
+            "share_of_change": {
+              "value": 0.2737,
+              "display": "27.4%"
+            }
+          },
+          {
+            "channel": "TikTok",
+            "change": {
+              "value": 1072.93,
+              "display": "$1.1k"
+            },
+            "direction": "up",
+            "share_of_change": {
+              "value": 0.126,
+              "display": "12.6%"
+            }
+          },
+          {
+            "channel": "Meta prospecting",
+            "change": {
+              "value": -1033.82,
+              "display": "$1.0k"
+            },
+            "direction": "down",
+            "share_of_change": {
+              "value": -0.1214,
+              "display": "12.1%"
+            }
+          }
+        ],
+        "largest": {
+          "channel": "Google shopping",
+          "change": {
+            "value": 3523.0,
+            "display": "$3.5k"
+          },
+          "direction": "up",
+          "share_of_change": {
+            "value": 0.4138,
+            "display": "41.4%"
+          }
+        }
+      },
+      "platform_attributed_revenue": {
+        "label": "platform-attributed revenue",
+        "total_change": {
+          "value": 55230.36,
+          "display": "$55.2k"
+        },
+        "direction": "up",
+        "still_filling_in": false,
+        "channels": [
+          {
+            "channel": "Meta retargeting",
+            "change": {
+              "value": 19786.95,
+              "display": "$19.8k"
+            },
+            "direction": "up",
+            "share_of_change": {
+              "value": 0.3583,
+              "display": "35.8%"
+            }
+          },
+          {
+            "channel": "Google branded search",
+            "change": {
+              "value": 18100.11,
+              "display": "$18.1k"
+            },
+            "direction": "up",
+            "share_of_change": {
+              "value": 0.3277,
+              "display": "32.8%"
+            }
+          },
+          {
+            "channel": "Google shopping",
+            "change": {
+              "value": 16986.49,
+              "display": "$17.0k"
+            },
+            "direction": "up",
+            "share_of_change": {
+              "value": 0.3076,
+              "display": "30.8%"
+            }
+          },
+          {
+            "channel": "TikTok",
+            "change": {
+              "value": 4729.96,
+              "display": "$4.7k"
+            },
+            "direction": "up",
+            "share_of_change": {
+              "value": 0.0856,
+              "display": "8.6%"
+            }
+          },
+          {
+            "channel": "Meta prospecting",
+            "change": {
+              "value": -4373.15,
+              "display": "$4.4k"
+            },
+            "direction": "down",
+            "share_of_change": {
+              "value": -0.0792,
+              "display": "7.9%"
+            }
+          }
+        ],
+        "largest": {
+          "channel": "Meta retargeting",
+          "change": {
+            "value": 19786.95,
+            "display": "$19.8k"
+          },
+          "direction": "up",
+          "share_of_change": {
+            "value": 0.3583,
+            "display": "35.8%"
+          }
+        }
+      }
+    },
+    "holdouts": {
+      "n_running": {
+        "value": 1.0,
+        "display": "1"
+      },
+      "running": [
+        {
+          "channel": "TikTok",
+          "window_start": "2025-05-26",
+          "window_end": "2025-06-22",
+          "result_due_in_week": {
+            "value": 24.0,
+            "display": "24"
+          },
+          "status": "running -- no result yet"
+        }
+      ],
+      "n_with_results": {
+        "value": 0.0,
+        "display": "0"
+      },
+      "results": [],
+      "note": "A result is measured over the whole holdout window, not this week alone, and only exists once the window has closed. Incremental ROAS is what the channel is worth; reported ROAS is what the platform claims. Write an interval as 1.99x (90% interval 1.89x to 2.11x)."
+    },
+    "notes": [
+      "Store revenue cannot be split by channel; platform-attributed revenue is not store revenue.",
+      "Reported ROAS is what the platforms claim. Only a holdout says what a channel is worth."
+    ]
+  }
+}

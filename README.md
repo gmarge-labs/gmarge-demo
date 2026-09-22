@@ -225,6 +225,54 @@ burning out, and the attribution says so.
 Neither module calls an AI API, and neither reads an answer out of
 `truth.json`.
 
+## Read-outs
+
+`gmarge/analyst.py` writes the weekly read-outs that the app displays. It is an
+offline script, and it is the only thing in the repo that calls a model —
+through `gmarge/llm.py`, the only module that imports `anthropic`:
+
+```bash
+cp .env.example .env          # add ANTHROPIC_API_KEY; .env is git-ignored
+python -m gmarge.analyst --weeks 8            # writes readouts/week-NN.json
+python -m gmarge.analyst --weeks 8 --dry-run  # no API call at all
+```
+
+The model does not see the data. For each week, `build_facts()` computes every
+number the read-out is allowed to use — the week's totals, the move against the
+prior week, each channel's share of that move, the trailing 8-week band that
+says whether the week is outside its normal range, the week's anomalies and any
+quality finding that overlaps it — and hands them over as JSON. The model is
+asked for at most 120 words of prose: what changed, what caused most of it,
+whether it is outside the normal range, and what is missing if the week's data
+is incomplete.
+
+Incompleteness gets its own counts, because a week that is partly missing is
+the one place a model is tempted to do arithmetic: how much of week 26 reported
+is a subtraction, and a subtraction is exactly what it is not allowed to make.
+So `completeness` carries the days in the week, the days with complete data,
+the days affected and the affected dates themselves, and the prompt says to
+describe incompleteness with those counts and never to count or subtract days.
+
+Then the reply is checked. Every figure in it is extracted and traced back to a
+value in the facts: a figure may be written to fewer decimal places, a ratio may
+be written as a percentage, and a name from the facts may be quoted with the
+digits it carries. Nothing else passes. A reply that fails is sent back once
+with the offending figures named; if the second reply also fails, **nothing is
+saved** and the week is reported as an error. A failure prints each offending
+figure with the sentence it was written in — `6` on its own says nothing, `'6'
+in: only 6 of 7 days reported` says the model was counting days — so a failure
+can be diagnosed without running it again.
+
+Each file holds the text, the facts it was written from, the model id and a
+timestamp, so a reviewer can check the prose against the numbers it came from.
+They are drafts until a human has read them — that review is the step between
+generation and commit, and it is not optional.
+
+`--dry-run` writes the same file with a read-out assembled in Python instead,
+and `model: null`. The tests use only that path: no key, no network, no model.
+It doubles as a check on the facts — if the template cannot be written from the
+facts alone, neither can the model.
+
 ## Tests
 
 ```bash

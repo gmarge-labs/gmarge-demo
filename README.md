@@ -325,6 +325,8 @@ facts alone, in the order asked for, neither can the model.
 
 ## The app
 
+Live at **<https://gmarge-demo.streamlit.app>**.
+
 `app.py` is a Streamlit app over the same three modules. It reads `data/` and
 `readouts/` off disk and nothing else — no key, no network, no `anthropic`
 anywhere in its import graph, which `tests/test_app.py` asserts by parsing the
@@ -371,6 +373,32 @@ Theme in `.streamlit/config.toml`: dark navy, brand navy `#002B6B`, Inter.
 `client.toolbarMode = "minimal"` there hides Streamlit's own chrome — no
 Deploy button, no hamburger — so a public demo is the app rather than the
 app inside a tool.
+
+### Keeping it awake
+
+Streamlit Community Cloud sleeps an app after a stretch with no visitors, and
+waking it is a click on a page rather than an HTTP request — so
+`.github/workflows/keep-awake.yml` runs `scripts/keep_awake.py` every six
+hours, which opens the app in a real Chromium, clicks the wake button if one
+is there, and waits for the app's own banner to render. It fails the run after
+three minutes, which is what sends the email.
+
+The check is for content, not for a status code: a sleeping app answers 200,
+and so does one that woke up and then threw. Two things make that check
+non-obvious, and both are covered by `tests/test_keep_awake.py`:
+
+* **The app runs in an iframe.** Streamlit Cloud serves a host page and puts
+  the app in `<iframe title="streamlitApp">`, so looking for the app's text on
+  the top-level page finds nothing even when the app is perfectly healthy.
+  Every check runs over `page.frames`.
+* **The text it waits for is `app.BANNER` itself**, and a test asserts the two
+  strings are identical — otherwise rewording the banner would leave the
+  workflow hunting for text that no longer exists and calling a healthy app
+  down, every six hours.
+
+`playwright` is pinned in the workflow and is deliberately not in
+`requirements.txt`: it is CI tooling, and the app's dependency set stays
+exactly the eight packages CLAUDE.md lists.
 
 ## Tests
 

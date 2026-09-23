@@ -10,6 +10,10 @@ __pycache__/
 .pytest_cache/
 *.egg-info/
 
+# Written by scripts/keep_awake.py when the app fails to render. The workflow
+# keeps it as a run artifact; it does not belong in the repository.
+keep-awake-failure.png
+
 # OS / editor
 .DS_Store
 .idea/

@@ -1,0 +1,72 @@
+# Keeps https://gmarge-demo.streamlit.app awake, and emails on failure.
+#
+# Streamlit Community Cloud sleeps an app after a stretch with no visitors, and
+# waking it is a click on a page rather than an HTTP request -- so this opens
+# the app in a real Chromium and waits for the app's own content to render.
+# See scripts/keep_awake.py for why HTTP 200 is not the test.
+#
+# playwright is pinned here rather than in requirements.txt: it is CI tooling,
+# not an app dependency, and the app's dependency set stays exactly the eight
+# packages CLAUDE.md lists.
+#
+# Note: GitHub disables scheduled workflows in a repository with no commits for
+# 60 days, and emails to say so. If the demo goes to sleep, check that this
+# workflow is still enabled before looking anywhere else.
+
+name: Keep the demo awake
+
+on:
+  schedule:
+    # Every six hours. The community tier sleeps after considerably longer
+    # than that, so a missed run is not a sleeping app.
+    - cron: "0 */6 * * *"
+  # Adds the "Run workflow" button on the Actions tab.
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "App URL to wake (defaults to the live demo)"
+        required: false
+        default: "https://gmarge-demo.streamlit.app"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keep-awake
+  cancel-in-progress: false
+
+env:
+  PLAYWRIGHT_VERSION: "1.63.0"
+  APP_URL: ${{ inputs.url || 'https://gmarge-demo.streamlit.app' }}
+
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    # The script gives up at 3 minutes; this is the backstop for a run that
+    # hangs somewhere else, such as the browser download.
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Playwright
+        run: pip install "playwright==${PLAYWRIGHT_VERSION}"
+
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+
+      - name: Open the app and wait for it to render
+        run: python scripts/keep_awake.py "${APP_URL}"
+
+      - name: Upload the screenshot of what was on screen instead
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: keep-awake-failure
+          path: keep-awake-failure.png
+          if-no-files-found: ignore
+          retention-days: 7

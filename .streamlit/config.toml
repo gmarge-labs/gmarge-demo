@@ -32,6 +32,12 @@ showSidebarBorder = true
 backgroundColor = "#002145"
 borderColor = "#123B78"
 
+[client]
+# Public demo: hide Streamlit's own chrome. "minimal" drops the Deploy button
+# and the developer options, and hides the menu entirely once nothing is left
+# in it -- so the page is the app, not the app inside a tool.
+toolbarMode = "minimal"
+
 [server]
 # The app reads data/ and readouts/ from disk and calls nothing. Nothing here
 # needs to phone home.

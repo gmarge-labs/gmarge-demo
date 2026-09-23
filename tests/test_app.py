@@ -445,3 +445,145 @@ def test_the_cards_and_read_outs_carry_no_stray_backslash(pages):
                 continue
             assert "\\$" not in block.value, f"{name}: a card shows a literal backslash"
             assert "$" not in block.value, f"{name}: a card has a bare dollar sign"
+
+
+# --------------------------------------------------------------------------
+# Public-app chrome
+# --------------------------------------------------------------------------
+
+CONFIG = ROOT / ".streamlit" / "config.toml"
+
+
+def test_streamlits_own_chrome_is_hidden():
+    """No Deploy button and no hamburger on a public demo.
+
+    "minimal" is the one mode that also hides the menu once nothing is left in
+    it; "viewer" would keep the hamburger for the viewer options.
+    """
+    import tomllib
+
+    config = tomllib.loads(CONFIG.read_text())
+    assert config["client"]["toolbarMode"] == "minimal"
+
+
+def test_every_heading_suppresses_its_anchor_link():
+    """Checked as syntax, so a heading added later cannot quietly skip it."""
+    import ast
+
+    tree = ast.parse(APP.read_text())
+    missing = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        if node.func.attr not in {"title", "header", "subheader"}:
+            continue
+        anchor = [k for k in node.keywords if k.arg == "anchor"]
+        if not anchor or not (isinstance(anchor[0].value, ast.Constant) and anchor[0].value.value is False):
+            missing.append(f"line {node.lineno}: {ast.unparse(node)[:60]}")
+    assert not missing, "headings without anchor=False: " + "; ".join(missing)
+
+
+def test_charts_carry_no_element_toolbar_but_dataframes_still_do():
+    """The rule is scoped to charts.
+
+    A blanket hide would also take the dataframe search and download buttons,
+    which are worth keeping -- the facts table under each read-out is the
+    thing a reader most wants to pull out.
+    """
+    source = APP.read_text()
+    # By rule, not by line: the selector wraps onto its own line.
+    rules = [block for block in source.split("}") if "stElementToolbar" in block and "display: none" in block]
+    assert rules, "no rule hides the chart element toolbar"
+    for rule in rules:
+        assert "stVegaLiteChart" in rule, "the rule is not scoped to charts"
+
+
+# --------------------------------------------------------------------------
+# Read-out provenance
+# --------------------------------------------------------------------------
+
+
+def test_provenance_names_the_model_or_says_dry_run():
+    assert app_module.provenance({"mode": "model", "model": "claude-haiku-4-5"}) == (
+        "model: claude-haiku-4-5"
+    )
+    assert app_module.provenance({"mode": "dry-run", "model": None}) == "dry run"
+    # A mode of "model" with nothing to name is not a model read-out.
+    assert app_module.provenance({"mode": "model", "model": None}) == "dry run"
+    assert app_module.provenance({}) == "dry run"
+
+
+def test_the_read_out_page_shows_each_files_provenance(pages):
+    captions = " ".join(c.value for c in pages["Agent read-outs"].caption)
+    records = app_module.load_readouts(str(ROOT / "readouts"))
+    for record in records:
+        assert app_module.provenance(record) in captions
+    assert "mode `" not in captions, "the old mode/model pair is still being printed"
+
+
+# --------------------------------------------------------------------------
+# The findings timeline
+# --------------------------------------------------------------------------
+
+
+def severity_chart(at) -> tuple:
+    """The findings timeline: the chart whose layers encode severity."""
+    for chart in charts(at):
+        if '"severity"' in chart.spec:
+            return chart
+    raise AssertionError("no chart encodes severity")
+
+
+def test_the_findings_timeline_has_a_row_per_finding(pages, analysis):
+    """One row, at the finding's own dates, in its own severity colour."""
+    chart = severity_chart(pages["Data health"])
+    frames = [f for f in datasets(chart).values() if "severity" in f.columns]
+    assert frames, "the timeline sent no severity data"
+    rows = frames[0]
+
+    findings = analysis["findings"]
+    assert len(rows) == len(findings)
+    assert list(rows["severity"]) == [f.severity for f in findings]
+    for row, finding in zip(rows.itertuples(), findings):
+        assert pd.Timestamp(row.start) == pd.Timestamp(finding.start_date)
+        # Drawn to the start of the next day, so the last day is covered.
+        assert pd.Timestamp(row.end) == pd.Timestamp(finding.end_date) + pd.Timedelta(days=1)
+
+
+def test_the_findings_timeline_keeps_its_severity_legend(pages):
+    spec = severity_chart(pages["Data health"]).spec
+    for level, colour in app_module.SEVERITY_COLOURS.items():
+        assert colour in spec, f"{level} is not in the colour scale"
+    assert '"legend"' in spec and '"orient": "bottom"' in spec
+
+
+def test_the_findings_timeline_names_its_rows_inside_the_plot(pages):
+    """The names are a text mark, not axis labels.
+
+    On the y axis they took two thirds of a phone's width and pushed the
+    legend and the last axis label off the edge of the chart.
+    """
+    import json
+
+    spec = json.loads(severity_chart(pages["Data health"]).spec)
+    layers = spec["layer"]
+    named = [l for l in layers if l.get("mark", {}).get("type") == "text"
+             and l.get("encoding", {}).get("text", {}).get("field") == "label"]
+    assert named, "the row names are not drawn inside the plot"
+
+    # "axis": null suppresses it; the key being absent means it is drawn. A
+    # .get() cannot tell those apart, so check the key is there and is null.
+    # Only the layers positioned by the row field. The provisional label is
+    # pinned to a pixel offset instead, and has no axis to draw.
+    with_y = [l for l in layers if "field" in l.get("encoding", {}).get("y", {})]
+    assert with_y, "no layer positions anything by row"
+    for layer in with_y:
+        y = layer["encoding"]["y"]
+        assert "axis" in y and y["axis"] is None, "a layer still draws the y axis"
+
+
+def test_short_span_reads_as_dates(analysis):
+    findings = {f.check: f for f in analysis["findings"]}
+    lag = findings["reporting_lag"]
+    assert app_module.short_span(lag) == "05-06 Jul"
+    assert app_module.finding_span(lag) == f"{lag.start_date} to {lag.end_date}"

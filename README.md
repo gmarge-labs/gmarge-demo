@@ -368,6 +368,9 @@ copy:
   data banner is on every page.
 
 Theme in `.streamlit/config.toml`: dark navy, brand navy `#002B6B`, Inter.
+`client.toolbarMode = "minimal"` there hides Streamlit's own chrome — no
+Deploy button, no hamburger — so a public demo is the app rather than the
+app inside a tool.
 
 ## Tests
 

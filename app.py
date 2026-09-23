@@ -392,6 +392,14 @@ def css() -> None:
             color: #E7EEFA;
         }
 
+        /* Charts carry no element toolbar. At phone width its fullscreen
+           button sits over the chart's top-right corner and the "provisional"
+           label, which is the one thing on that corner that has to be read.
+           Scoped to charts by :has(), so the dataframe toolbars -- search,
+           download, which are useful -- are untouched. */
+        [data-testid="stFullScreenFrame"]:has([data-testid="stVegaLiteChart"])
+            [data-testid="stElementToolbar"] { display: none !important; }
+
         .gm-key { font-size: 0.82rem; color: #9AA7C0; margin: -0.3rem 0 0.9rem 0; }
         .gm-swatch { display: inline-block; width: 0.6rem; height: 0.6rem; border-radius: 2px; margin-right: 0.3rem; }
         .gm-tag {
@@ -445,7 +453,7 @@ def page_overview(analysis: dict, lag: dict | None) -> None:
     window = metrics["window"]
     weekly = metrics["weekly_reconciliation"]
 
-    st.title("Where the money actually went")
+    st.title("Where the money actually went", anchor=False)
     md(
         f"**{metrics['brand']}** &nbsp;·&nbsp; {window['start']} to {window['end']} "
         f"&nbsp;·&nbsp; {count_display(window['n_weeks'])} weeks",
@@ -482,7 +490,7 @@ def page_overview(analysis: dict, lag: dict | None) -> None:
     if lag:
         note(lag_note(lag))
 
-    st.subheader("Store revenue by week")
+    st.subheader("Store revenue by week", anchor=False)
     cap("Shopify, complete for every day in the window. Gross revenue, before discounts and refunds.")
     revenue = (
         alt.Chart(weekly)
@@ -502,7 +510,7 @@ def page_overview(analysis: dict, lag: dict | None) -> None:
         f"{PROVISIONAL} Shopify is not one of them, so this line is complete across them.",
     )
 
-    st.subheader("The over-claim ratio, week by week")
+    st.subheader("The over-claim ratio, week by week", anchor=False)
     cap(
         "Platform-attributed revenue divided by what the store actually took. "
         "1.00x would mean the platforms, between them, claimed the store's revenue exactly once."
@@ -548,7 +556,7 @@ def page_overview(analysis: dict, lag: dict | None) -> None:
         else "",
     )
 
-    st.subheader("Latest read-out")
+    st.subheader("Latest read-out", anchor=False)
     readouts = load_readouts()
     if not readouts:
         st.warning("No read-outs are committed yet. Generate them with `python -m gmarge.analyst`.")
@@ -571,7 +579,7 @@ def page_channels(analysis: dict, lag: dict | None) -> None:
     channels = metrics["channel_summary"]
     holdouts = metrics["holdouts"]
 
-    st.title("What each channel claims, and what it is worth")
+    st.title("What each channel claims, and what it is worth", anchor=False)
     md(
         "Grey is what the platform reported over the holdout window. Light blue is what the "
         "holdout measured over the same window and the same control regions, so the two are "
@@ -653,7 +661,7 @@ def page_channels(analysis: dict, lag: dict | None) -> None:
         height=300,
     )
 
-    st.subheader("The gap, channel by channel")
+    st.subheader("The gap, channel by channel", anchor=False)
     for row in order:
         item = paired[paired["channel"] == row].iloc[0]
         card(
@@ -672,7 +680,7 @@ def page_channels(analysis: dict, lag: dict | None) -> None:
             f"{count_display(item['n_pairs'])} matched region pairs.</p>",
         )
 
-    st.subheader("Whole-window spend and reported ROAS")
+    st.subheader("Whole-window spend and reported ROAS", anchor=False)
     table = channels.assign(
         Spend=[money_display(v) for v in channels["spend"]],
         **{
@@ -751,7 +759,7 @@ def page_holdouts(analysis: dict, lag: dict | None) -> None:
     plan = {h["channel"]: h for h in analysis["holdout_plan"]}
     orders = analysis["orders"]
 
-    st.title("Holdout tests")
+    st.title("Holdout tests", anchor=False)
     md(
         "Each test switched a channel off in five regions and left it running in five matched "
         "ones. What the paused regions did *not* earn, against what their matched controls "
@@ -760,7 +768,7 @@ def page_holdouts(analysis: dict, lag: dict | None) -> None:
     colour_key()
 
     for row in holdouts.itertuples():
-        st.subheader(f"{row.channel} — {row.start_date.date()} to {row.end_date.date()}")
+        st.subheader(f"{row.channel} — {row.start_date.date()} to {row.end_date.date()}", anchor=False)
 
         direction = "below" if row.incremental_revenue >= 0 else "above"
         md(
@@ -875,17 +883,27 @@ def flatten_facts(node, prefix: str = "") -> list[tuple[str, str, object]]:
     return rows
 
 
+def provenance(record: dict) -> str:
+    """Who wrote this read-out: a named model, or nobody.
+
+    ``dry run`` means the text was assembled in Python from the same facts and
+    no model was called, which is what the tests use. Saying "dry run" is
+    shorter and truer than printing a mode beside an empty model id.
+    """
+    model = record.get("model")
+    if record.get("mode") == "model" and model:
+        return f"model: {model}"
+    return "dry run"
+
+
 def render_readout(record: dict, expanded: bool = False) -> None:
     """One read-out, with the facts it was allowed to use underneath."""
-    mode = record.get("mode", "model")
-    model = record.get("model") or "no model -- assembled in Python from the same facts"
-
     md(
         f"**Week {record['week']}** &nbsp;·&nbsp; {record['week_start']} to {record['week_end']} "
         f"&nbsp;·&nbsp; {count_display(record.get('word_count', 0))} words",
     )
     md(f'<div class="gm-readout">{record["text"]}</div>', unsafe_allow_html=True)
-    cap(f"{record['disclaimer']}  \n`{record['path']}` · mode `{mode}` · {model}")
+    cap(f"{record['disclaimer']}  \n`{record['path']}` · {provenance(record)}")
 
     with st.expander(f"The facts week {record['week']} was written from", expanded=expanded):
         md(
@@ -909,7 +927,7 @@ def render_readout(record: dict, expanded: bool = False) -> None:
 
 
 def page_readouts(analysis: dict, lag: dict | None) -> None:
-    st.title("Agent read-outs")
+    st.title("Agent read-outs", anchor=False)
     md(
         "One read-out a week. Generated **offline**, checked by a human against the facts beside "
         "it, and committed as a file. This page reads those files. It never calls a model, and "
@@ -939,6 +957,24 @@ def page_readouts(analysis: dict, lag: dict | None) -> None:
 # --------------------------------------------------------------------------
 
 
+def finding_span(finding: quality.Finding) -> str:
+    """``2025-02-26 to 2025-02-27``, or a single date when it is one day."""
+    if finding.start_date == finding.end_date:
+        return finding.start_date
+    return f"{finding.start_date} to {finding.end_date}"
+
+
+def short_span(finding: quality.Finding) -> str:
+    """``26-27 Feb`` -- the same range, short enough to sit beside a chart row."""
+    start = pd.Timestamp(finding.start_date)
+    end = pd.Timestamp(finding.end_date)
+    if start == end:
+        return start.strftime("%d %b")
+    if (start.month, start.year) == (end.month, end.year):
+        return f"{start.strftime('%d')}-{end.strftime('%d %b')}"
+    return f"{start.strftime('%d %b')} - {end.strftime('%d %b')}"
+
+
 def format_metric(metric_key: str, value: float) -> str:
     """An anomaly's metric, in the analyst's formatting.
 
@@ -955,7 +991,7 @@ def page_health(analysis: dict, lag: dict | None) -> None:
     findings = analysis["findings"]
     flags = analysis["anomalies"]
 
-    st.title("Data health")
+    st.title("Data health", anchor=False)
     md(
         "What is wrong with the tables, and which channel-weeks broke with their own history. "
         "Both are recovered from the data the way an analyst would recover them — nothing here "
@@ -966,7 +1002,7 @@ def page_health(analysis: dict, lag: dict | None) -> None:
     left.metric("Data-quality findings", count_display(len(findings)))
     right.metric("Anomaly flags", count_display(len(flags)))
 
-    st.subheader("Data-quality findings")
+    st.subheader("Data-quality findings", anchor=False)
     if not findings:
         st.success("No findings.")
     else:
@@ -975,58 +1011,112 @@ def page_health(analysis: dict, lag: dict | None) -> None:
                 {
                     "start": pd.Timestamp(f.start_date),
                     "end": pd.Timestamp(f.end_date) + pd.Timedelta(days=1),
+                    "midpoint": pd.Timestamp(f.start_date)
+                    + (pd.Timestamp(f.end_date) - pd.Timestamp(f.start_date)) / 2,
                     "label": f"{SOURCE_LABELS.get(f.source, f.source)} — {f.check.replace('_', ' ')}",
                     "severity": f.severity,
+                    "span": short_span(f),
+                    "when": finding_span(f),
                     "description": f.description,
                 }
                 for f in findings
             ]
         )
+        severity = alt.Color(
+            "severity:N",
+            title=None,
+            sort=["high", "medium", "low"],
+            # Under the plot, not over it: the row names occupy the top of
+            # each band, and the plot is now full width so the three items fit.
+            legend=alt.Legend(orient="bottom", direction="horizontal"),
+            scale=alt.Scale(
+                domain=["high", "medium", "low"],
+                range=[SEVERITY_COLOURS["high"], SEVERITY_COLOURS["medium"], SEVERITY_COLOURS["low"]],
+            ),
+        )
+        tips = [
+            alt.Tooltip("label:N", title=None),
+            alt.Tooltip("severity:N", title="Severity"),
+            alt.Tooltip("when:N", title="When"),
+            alt.Tooltip("description:N", title="What"),
+        ]
+        # The row name goes inside the plot rather than on the y axis. On the
+        # axis, "ad spend - pixel double counting" took two thirds of a phone's
+        # width, squeezing the plot until the legend and the last axis label
+        # ran off the edge. Inline, every row gets the full width.
+        position = alt.Y("label:N", title=None, sort=None, axis=None)
+        axis = alt.X("start:T", title="Date", axis=alt.Axis(format="%d %b"))
+        ROW = 8  # pixels below the row's centre line, where the marks sit
+
+        names = (
+            alt.Chart(rows)
+            .mark_text(align="left", dy=-9, fontSize=11, color=TEXT)
+            .encode(x=alt.value(0), y=position, text="label:N", tooltip=tips)
+        )
+
+        # The true span, which for most findings is two or three days out of a
+        # hundred and eighty-two and so is a few pixels wide.
         spans = (
             alt.Chart(rows)
-            .mark_bar(height=14, cornerRadius=3)
-            .encode(
-                x=alt.X("start:T", title="Date", axis=alt.Axis(format="%d %b")),
-                x2="end:T",
-                y=alt.Y("label:N", title=None, sort=None, axis=alt.Axis(labelLimit=220)),
-                color=alt.Color(
-                    "severity:N",
-                    title=None,
-                    scale=alt.Scale(
-                        domain=["high", "medium", "low"],
-                        range=[SEVERITY_COLOURS["high"], SEVERITY_COLOURS["medium"], SEVERITY_COLOURS["low"]],
-                    ),
-                ),
-                tooltip=[
-                    alt.Tooltip("label:N", title=None),
-                    alt.Tooltip("severity:N", title="Severity"),
-                    alt.Tooltip("start:T", title="From"),
-                    alt.Tooltip("description:N", title="What"),
-                ],
-            )
+            .mark_bar(height=10, cornerRadius=2, yOffset=ROW)
+            .encode(x=axis, x2="end:T", y=position, color=severity, tooltip=tips)
         )
+        # A fixed-size marker on top, so a two-day finding is findable without
+        # drawing it as if it lasted a fortnight. The bar still carries the
+        # length; the marker only says "here".
+        markers = (
+            alt.Chart(rows)
+            .mark_point(shape="diamond", size=90, filled=True, opacity=1.0, stroke=None, yOffset=ROW)
+            .encode(x=alt.X("midpoint:T", title="Date", axis=alt.Axis(format="%d %b")),
+                    y=position, color=severity, tooltip=tips)
+        )
+        # And the dates in words beside the marker, because a position on a
+        # six-month axis is not a date anyone can read off. A finding near the
+        # end of the window takes its label on the inside, so the text is not
+        # cut off by the edge of the plot -- which is where the reporting lag
+        # always sits.
+        def dated(frame: pd.DataFrame, align: str, dx: int) -> alt.Chart:
+            return (
+                alt.Chart(frame)
+                .mark_text(align=align, dx=dx, dy=ROW, fontSize=10, color=MUTED)
+                .encode(
+                    x=alt.X("midpoint:T", title="Date", axis=alt.Axis(format="%d %b")),
+                    y=position,
+                    text="span:N",
+                    tooltip=tips,
+                )
+            )
+
+        window = rows["end"].max() - rows["start"].min()
+        near_end = rows["midpoint"] > rows["start"].min() + window * 0.75
+        labels = [
+            dated(frame, align, dx)
+            for frame, align, dx in ((rows[~near_end], "left", 11), (rows[near_end], "right", -11))
+            if not frame.empty
+        ]
         show(
-            alt.layer(*lag_layers(lag, rows["start"].min(), rows["end"].max()), spans),
-            f"When each finding falls in the six-month window. {PROVISIONAL}",
-            # A row per finding, plus room for the legend above them.
-            height=max(160, 46 * len(findings) + 60),
+            alt.layer(
+                *lag_layers(lag, rows["start"].min(), rows["end"].max()),
+                names,
+                spans,
+                markers,
+                *labels,
+            ),
+            f"Where each finding falls in the six-month window. {PROVISIONAL}",
+            # A name and a bar per finding, plus the axis and the legend.
+            height=max(150, 54 * len(findings) + 20),
         )
 
         for finding in findings:
-            span = (
-                finding.start_date
-                if finding.start_date == finding.end_date
-                else f"{finding.start_date} to {finding.end_date}"
-            )
             card(
                 f"{tag(finding.severity)} &nbsp; {SOURCE_LABELS.get(finding.source, finding.source)} "
                 f"— {finding.check.replace('_', ' ')}",
-                f"<p style='color:{MUTED}'>{span} · "
+                f"<p style='color:{MUTED}'>{finding_span(finding)} · "
                 f"{count_display(len(finding.dates))} days</p>"
                 f"<p>{finding.description}</p>",
             )
 
-    st.subheader("Anomaly flags")
+    st.subheader("Anomaly flags", anchor=False)
     cap(
         "Only rates are scored — reported ROAS, CPC, CPM, CTR and frequency — against each "
         "channel's own trailing eight weeks. Spend and revenue levels move for planned reasons; "

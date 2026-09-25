@@ -35,7 +35,7 @@ import time
 APP_URL = "https://gmarge-demo.streamlit.app"
 
 # The banner app.py puts on every page. Kept identical to app.BANNER by a test.
-APP_TEXT = "Sample data for a fictional brand. See what G-marge would show you."
+APP_TEXT = "Sample data for a fictional brand. See what G-Marge would show you."
 
 # The button Streamlit Cloud shows on a sleeping app ("Yes, get this app back
 # up!"). Matched on the accessible name of a button, not on page text, and

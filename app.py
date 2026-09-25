@@ -1,4 +1,4 @@
-"""The G-marge demo app: what the measurement looks like once someone reads it.
+"""The G-Marge demo app: what the measurement looks like once someone reads it.
 
 Run it with ``streamlit run app.py``.
 
@@ -65,7 +65,7 @@ from gmarge.metrics import all_metrics, holdout_plan, load_tables
 # --------------------------------------------------------------------------
 
 CONTACT_URL = "https://www.gmarge.com/contact"
-BANNER = "Sample data for a fictional brand. See what G-marge would show you."
+BANNER = "Sample data for a fictional brand. See what G-Marge would show you."
 
 # The page's navy, background and surfaces are set in .streamlit/config.toml
 # and in the stylesheet below. The two colours here are the ones charts encode
@@ -1158,7 +1158,7 @@ RENDER = {
 
 def main() -> None:
     st.set_page_config(
-        page_title="G-marge — incrementality demo",
+        page_title="G-Marge — incrementality demo",
         page_icon="📐",
         layout="centered",
         # "auto", not "expanded": on a phone an expanded sidebar opens over the
@@ -1171,12 +1171,12 @@ def main() -> None:
     lag = lag_window(analysis["findings"])
 
     with st.sidebar:
-        md(f"### <span style='color:{INCREMENTAL}'>G-marge</span>", unsafe_allow_html=True)
+        md(f"### <span style='color:{INCREMENTAL}'>G-Marge</span>", unsafe_allow_html=True)
         cap(analysis["metrics"]["brand"])
         page = st.radio("Page", PAGES, label_visibility="collapsed")
         st.divider()
         cap(analysis["metrics"]["disclaimer"])
-        md(f"[See what G-marge would show you]({CONTACT_URL})")
+        md(f"[See what G-Marge would show you]({CONTACT_URL})")
 
     banner()
     RENDER[page or PAGES[0]](analysis, lag)

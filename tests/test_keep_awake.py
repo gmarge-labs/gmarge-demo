@@ -82,8 +82,8 @@ class FakePage:
 # the app's text, and the app in an iframe underneath it.
 HOST_TEXT = "Manage app · Streamlit"
 APP_FRAME_TEXT = (
-    "G-marge\nNorthfield Goods (sample brand)\n"
-    "Sample data for a fictional brand. See what G-marge would show you. Talk to us →\n"
+    "G-Marge\nNorthfield Goods (sample brand)\n"
+    "Sample data for a fictional brand. See what G-Marge would show you. Talk to us →\n"
     "Where the money actually went"
 )
 
@@ -129,7 +129,7 @@ def test_a_frame_that_detaches_mid_read_is_skipped_not_fatal():
 
 def test_a_half_rendered_app_does_not_count():
     """Streamlit paints the sidebar before it has run the script."""
-    partial = "G-marge\nNorthfield Goods (sample brand)\nOverview\nChannels"
+    partial = "G-Marge\nNorthfield Goods (sample brand)\nOverview\nChannels"
     assert not keep_awake.is_loaded(FakePage(FakeFrame(HOST_TEXT), FakeFrame(partial)))
 
 
@@ -161,7 +161,7 @@ def test_the_pattern_survives_streamlits_wording(wording):
 @pytest.mark.parametrize(
     "wording",
     [
-        "Sample data for a fictional brand. See what G-marge would show you.",
+        "Sample data for a fictional brand. See what G-Marge would show you.",
         "Talk to us",
         "Data health",
         "Manage app",

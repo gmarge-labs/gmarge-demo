@@ -1,4 +1,4 @@
-# Theme for the G-marge demo app. Matches gmarge.com: dark navy, Inter, light
+# Theme for the G-Marge demo app. Matches gmarge.com: dark navy, Inter, light
 # blue for incremental/true figures and grey for platform-reported ones.
 #
 # The two figure colours are also fixed in app.py (INCREMENTAL / REPORTED) so
